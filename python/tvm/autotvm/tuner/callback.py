@@ -57,6 +57,7 @@ class Monitor(object):
     """A monitor to collect statistic during tuning"""
     def __init__(self):
         self.scores = []
+        self.time_costs = []
         self.timestamps = []
 
     def __call__(self, tuner, inputs, results):
@@ -64,8 +65,10 @@ class Monitor(object):
             if res.error_no == 0:
                 flops = inp.task.flop / np.mean(res.costs)
                 self.scores.append(flops)
+                self.time_costs.append(np.mean(res.costs))
             else:
                 self.scores.append(0)
+                self.time_costs.append(1e9)
 
             self.timestamps.append(res.timestamp)
 
@@ -76,6 +79,10 @@ class Monitor(object):
     def trial_scores(self):
         """get scores (currently is flops) of all trials"""
         return np.array(self.scores)
+
+    def trial_costs(self):
+        """get time costs of all trials"""
+        return np.array(self.time_costs)
 
     def trial_timestamps(self):
         """get wall clock time stamp of all trials"""
