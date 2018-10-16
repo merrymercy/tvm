@@ -1,11 +1,11 @@
 """Tuner that uses xgboost as cost model"""
 
 from .model_based_tuner import ModelBasedTuner, ModelOptimizer
-from .xgboost_cost_model import XGBoostCostModel
+from .treernn_cost_model import TreeRNNCostModel
 from .sa_model_optimizer import SimulatedAnnealingOptimizer
 
 
-class XGBTuner(ModelBasedTuner):
+class TreeGRUTuner(ModelBasedTuner):
     """Tuner that uses xgboost as cost model
 
     Parameters
@@ -16,21 +16,7 @@ class XGBTuner(ModelBasedTuner):
         The size of a plan. After `plan_size` trials, the tuner will refit a new cost model
         and do planing for the next `plan_size` trials.
     feature_type: str, optional
-        If is 'itervar', use features extracted from IterVar (loop variable).
-        If is 'knob', use flatten ConfigEntity directly.
-        If is 'curve', use sampled curve feature (relation feature).
 
-        Note on choosing feature type:
-        For single task tuning, 'itervar' and 'knob' are good.
-                                'itervar' is more accurate but 'knob' is much faster.
-                                There are some constraints on 'itervar', if you meet
-                                problems with feature extraction when using 'itervar',
-                                you can swith to 'knob'.
-
-        For cross-shape tuning (e.g. many convolutions with different shapes),
-                               'itervar' and 'curve' has better transferability,
-                               'knob' is faster.
-        For cross-device or cross-operator tuning, you can use 'curve' only.
     loss_type: str
         If is 'reg', use regression loss to train cost model.
                      The cost model predicts the normalized flops.
@@ -48,50 +34,69 @@ class XGBTuner(ModelBasedTuner):
         The verbose level.
         If is 0, output nothing.
         Otherwise, output debug information every `verbose` iterations.
-    xgb_params: Dict, optional
+    rnn_params: Dict, optional
         The parameters for xgboost model. This will override `loss_type`
     """
     def __init__(self, task, plan_size=64,
                  feature_type='itervar', loss_type='rank', num_threads=None,
-                 optimizer='sa', diversity_filter_ratio=None, log_interval=50, xgb_params=None):
+                 optimizer='sa', diversity_filter_ratio=None, log_interval=50, rnn_params=None):
 
-        if xgb_params is None:
+        if rnn_params is None:
             if loss_type == 'reg':
-                xgb_params = {
-                    'max_depth': 3,
-                    'gamma': 0.0001,
-                    'min_child_weight': 1,
+                rnn_params = {
+                    # rnn setting
+                    'cell_type': 'gru',
+                    'voc_size': 128,
+                    'emb_dim': 128,
+                    'rnn_hidden_size': 128,
+                    'decoder_hidden_size': [128],
+                    'max_n_children': 20,
+                    'num_mem_slots': 0,
 
-                    'subsample': 1.0,
+                    # training setting
+                    'loss_type': 'reg',
+                    'learning_rate': 7e-4,
+                    'wd': 1e-4,
+                    'clip_gradient': 5.0,
 
-                    'eta': 0.3,
-                    'lambda': 1.00,
-                    'alpha': 0,
-
-                    'objective': 'reg:linear',
+                    'ctx': 'gpu',
+                    'max_batch': 500,
+                    'train_batch_size': 128,
+                    'train_eval_every': 10,
+                    'train_early_stopping': 100,
                 }
             elif loss_type == 'rank':
-                xgb_params = {
-                    'max_depth': 3,
-                    'gamma': 0.0001,
-                    'min_child_weight': 1,
+                rnn_params = {
+                    # rnn setting
+                    'cell_type': 'gru',
+                    'voc_size': 128,
+                    'emb_dim': 128,
+                    'rnn_hidden_size': 128,
+                    'decoder_hidden_size': [128],
+                    'max_n_children': 20,
+                    'num_mem_slots': 0,
 
-                    'subsample': 1.0,
+                    # training setting
+                    'loss_type': 'rank',
+                    'learning_rate': 7e-4,
+                    'wd': 1e-4,
+                    'clip_gradient': 5.0,
 
-                    'eta': 0.3,
-                    'lambda': 1.00,
-                    'alpha': 0,
-
-                    'objective': 'rank:pairwise',
+                    'ctx': 'gpu',
+                    'max_batch': 500,
+                    'train_batch_size': 128,
+                    'train_eval_every': 10,
+                    'train_early_stopping': 100,
                 }
             else:
                 raise RuntimeError("Invalid loss type: " + loss_type)
 
-        cost_model = XGBoostCostModel(task,
+        cost_model = TreeRNNCostModel(task,
                                       feature_type=feature_type,
-                                      xgb_params=xgb_params,
+                                      rnn_params=rnn_params,
                                       num_threads=num_threads,
                                       log_interval=log_interval // 2)
+
         if optimizer == 'sa':
             optimizer = SimulatedAnnealingOptimizer(task, log_interval=log_interval)
         else:
@@ -99,11 +104,11 @@ class XGBTuner(ModelBasedTuner):
                                                           "a supported name string" \
                                                           "or a ModelOptimizer object."
 
-        super(XGBTuner, self).__init__(task, cost_model, optimizer,
-                                       plan_size, diversity_filter_ratio)
+        super(TreeGRUTuner, self).__init__(task, cost_model, optimizer,
+                                           plan_size, diversity_filter_ratio)
 
     def tune(self, *args, **kwargs):  # pylint: disable=arguments-differ
-        super(XGBTuner, self).tune(*args, **kwargs)
+        super(TreeGRUTuner, self).tune(*args, **kwargs)
 
         # manually close pool to avoid multiprocessing issues
         self.cost_model._close_pool()

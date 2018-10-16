@@ -41,7 +41,6 @@ def tune_tasks(tasks,
                try_winograd,
                n_repeat):
     """ tune a list of tasks """
-
     if try_winograd:
         for i in range(len(tasks)):
             try:  # try winograd template
@@ -133,7 +132,7 @@ def tune_tasks(tasks,
 def get_target(target):
     # target device
     target_table = {
-       'local':      ('local','opencl -device=mali', None),
+       'local':      ('local','cuda -model=titanx', None),
 
        'rpi3b-cpu':  ('rpi3b',
                       tvm.target.arm_cpu('rasp3b'), None),
@@ -210,7 +209,7 @@ def get_tuning_option(device_key, args):
        'pixel2-gpu':   (10,     6,     4,      3,      100,           50,      400,            'ndk'),
 
        # nvidia gpu
-       '1080ti':       (10,     5,     10,     3,      150,           500,     600,            'default'),
+       '1080ti':       (10,     5,     10,     3,      0,             500,     600,            'default'),
        'titanx':       (10,     5,     10,     3,      150,           500,     None,           'default'),
 
        # amd gpu
@@ -314,7 +313,9 @@ if __name__ == "__main__":
 
     if args.debug:
         import logging
-        logging.basicConfig(level=logging.DEBUG)
+        logging.basicConfig()
+        logger = logging.getLogger("autotvm")
+        logger.setLevel(logging.DEBUG)
 
     dtype = args.dtype
 

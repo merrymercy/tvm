@@ -18,6 +18,7 @@ from .model_based_tuner import CostModel, FeatureCache
 
 logger = logging.getLogger('autotvm')
 
+
 class XGBoostCostModel(CostModel):
     """XGBoost as cost model
 
@@ -25,7 +26,7 @@ class XGBoostCostModel(CostModel):
     ----------
     task: Task
         The tuning task
-    feature_type: str, optional
+    feature_type: str
         If is 'itervar', use features extracted from IterVar (loop variable).
         If is 'knob', use flatten ConfigEntity directly.
         If is 'curve', use sampled curve feature (relation feature).
@@ -41,20 +42,17 @@ class XGBoostCostModel(CostModel):
                                'itervar' and 'curve' has better transferability,
                                'knob' is faster.
         For cross-device or cross-operator tuning, you can use 'curve' only.
-    loss_type: str
-        If is 'reg', use regression loss to train cost model.
-                     The cost model predicts the normalized flops.
-        If is 'rank', use pairwise rank loss to train cost model.
-                     The cost model predicts relative rank score.
+    xgb_params: Dict
+        The parameters for xgboost model
     num_threads: int, optional
         The number of threads.
     log_interval: int, optional
         If is not none, the cost model will print training log every `log_interval` iterations.
     upper_model: XGBoostCostModel, optional
-        The upper model used in transfer learning
+        The upper model used in transfer learning.
     """
-    def __init__(self, task, feature_type, loss_type, num_threads=None, log_interval=25,
-                 upper_model=None):
+    def __init__(self, task, feature_type, xgb_params=None,
+                 num_threads=None, log_interval=25, upper_model=None):
         super(XGBoostCostModel, self).__init__()
 
         if xgb is None:
@@ -67,41 +65,10 @@ class XGBoostCostModel(CostModel):
         self.space = task.config_space
 
         self.fea_type = feature_type
-        self.loss_type = loss_type
         self.num_threads = num_threads
         self.log_interval = log_interval
 
-        if loss_type == 'reg':
-            self.xgb_params = {
-                'max_depth': 3,
-                'gamma': 0.0001,
-                'min_child_weight': 1,
-
-                'subsample': 1.0,
-
-                'eta': 0.3,
-                'lambda': 1.00,
-                'alpha': 0,
-
-                'objective': 'reg:linear',
-            }
-        elif loss_type == 'rank':
-            self.xgb_params = {
-                'max_depth': 3,
-                'gamma': 0.0001,
-                'min_child_weight': 1,
-
-                'subsample': 1.0,
-
-                'eta': 0.3,
-                'lambda': 1.00,
-                'alpha': 0,
-
-                'objective': 'rank:pairwise',
-            }
-        else:
-            raise RuntimeError("Invalid loss type: " + loss_type)
-
+        self.xgb_params = xgb_params
         self.xgb_params['silent'] = 1
         if num_threads:
             self.xgb_params['nthread'] = num_threads
@@ -121,11 +88,9 @@ class XGBoostCostModel(CostModel):
         else:
             self.feature_cache = FeatureCache()
         self.upper_model = upper_model
-        self.feature_extra_ct = 0
         self.pool = None
         self.base_model = None
 
-        self._sample_size = 0
         self._reset_pool(self.space, self.target, self.task)
 
     def _reset_pool(self, space, target, task):
@@ -155,8 +120,8 @@ class XGBoostCostModel(CostModel):
             return self.upper_model._get_pool()
         return self.pool
 
-    def _base_model_discount(self):
-        return 1.0 / (2 ** (self._sample_size / 64.0))
+    def _base_model_discount(self, sample_size):
+        return 1.0 / (2 ** (sample_size / 64.0))
 
     def fit(self, xs, ys, plan_size):
         tic = time.time()
@@ -170,10 +135,9 @@ class XGBoostCostModel(CostModel):
         valid_index = y_train > 1e-6
         index = np.random.permutation(len(x_train))
         dtrain = xgb.DMatrix(x_train[index], y_train[index])
-        self._sample_size = len(x_train)
 
         if self.base_model:
-            discount = self._base_model_discount()
+            discount = self._base_model_discount(len(xs))
             if discount < 0.05:  # discard base model
                 self.base_model.upper_model = None
                 self.base_model = None
@@ -211,7 +175,6 @@ class XGBoostCostModel(CostModel):
 
         # extract feature
         self._reset_pool(self.space, self.target, self.task)
-        pool = self._get_pool()
         if self.fea_type == 'itervar':
             feature_extract_func = _extract_itervar_feature_log
         elif self.fea_type == 'knob':
@@ -220,7 +183,7 @@ class XGBoostCostModel(CostModel):
             feature_extract_func = _extract_curve_feature_log
         else:
             raise RuntimeError("Invalid feature type: " + self.fea_type)
-        res = pool.map(feature_extract_func, data)
+        res = self._get_pool().map(feature_extract_func, data)
 
         # filter out feature with different shapes
         fea_len = len(self._get_feature([0])[0])
@@ -257,7 +220,6 @@ class XGBoostCostModel(CostModel):
                                  verbose_eval=self.log_interval)])
 
         logger.debug("XGB train: %.2f\tobs: %d", time.time() - tic, len(xs))
-
         return True
 
     def predict(self, xs, output_margin=False):
@@ -270,17 +232,23 @@ class XGBoostCostModel(CostModel):
 
         return self.bst.predict(dtest, output_margin=output_margin)
 
-    def load_basemodel(self, base_model):
+    def load_base_model(self, base_model):
         self.base_model = base_model
         self.base_model._close_pool()
         self.base_model.upper_model = self
 
     def spawn_base_model(self):
-        return XGBoostCostModel(self.task, self.fea_type, self.loss_type,
-                                self.num_threads, self.log_interval, self)
+        return XGBoostCostModel(self.task, self.fea_type, self.xgb_params,
+                                self.num_threads, self.log_interval)
 
     def _get_feature(self, indexes):
-        """get features for indexes, run extraction if we do not have cache for them"""
+        """get features for a batch of indexes, run extraction if we do not have cache for them
+
+        Parameters
+        ----------
+        indexes: Array of int
+            indexes of configurations in the space
+        """
         # free feature cache
         if self.feature_cache.size(self.fea_type) >= 100000:
             self.feature_cache.clear(self.fea_type)
@@ -291,8 +259,7 @@ class XGBoostCostModel(CostModel):
         need_extract = [x for x in indexes if x not in fea_cache]
 
         if need_extract:
-            pool = self._get_pool()
-            feas = pool.map(self.feature_extract_func, need_extract)
+            feas = self._get_pool().map(self.feature_extract_func, need_extract)
             for i, fea in zip(need_extract, feas):
                 fea_cache[i] = fea
 

@@ -10,6 +10,7 @@ import numpy as np
 from .tuner import Tuner
 from ..env import GLOBAL_SCOPE
 
+
 class FeatureCache(object):
     """Feature cache manager for cache sharing between different cost models"""
     def __init__(self):
@@ -88,6 +89,11 @@ class CostModel(object):
             The tuning records
         plan_size: int
             The plan size of tuner
+
+        Returns
+        -------
+        success: Bool
+            Whether success in loading and training for the log
         """
         raise NotImplementedError()
 
@@ -109,7 +115,7 @@ class CostModel(object):
         """
         raise NotImplementedError()
 
-    def load_basemodel(self, base_model):
+    def load_base_model(self, base_model):
         """Load base model for transfer learning
 
         Parameters
@@ -126,7 +132,7 @@ class CostModel(object):
         Returns
         -------
         model: CostModel
-            A model with the same hyperparameter (argument)
+            A model with the same hyper-parameter (argument)
         """
         raise NotImplementedError()
 
@@ -282,7 +288,7 @@ class ModelBasedTuner(Tuner):
             self.trials = maximums
             self.trial_pt = 0
 
-        self.cost_model.load_basemodel(base_model)
+        self.cost_model.load_base_model(base_model)
         GLOBAL_SCOPE.in_tuning = False
 
     def has_next(self):
