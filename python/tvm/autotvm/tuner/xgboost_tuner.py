@@ -63,6 +63,7 @@ class XGBTuner(ModelBasedTuner):
                     'min_child_weight': 1,
 
                     'subsample': 1.0,
+                    'silent': 1,
 
                     'eta': 0.3,
                     'lambda': 1.00,
@@ -77,6 +78,7 @@ class XGBTuner(ModelBasedTuner):
                     'min_child_weight': 1,
 
                     'subsample': 1.0,
+                    'silent': 1,
 
                     'eta': 0.3,
                     'lambda': 1.00,

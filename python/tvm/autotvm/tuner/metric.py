@@ -89,7 +89,7 @@ def cover_curve(trial_ranks):
         function values
     """
     ret = np.empty(len(trial_ranks))
-    keep = -1
+    keep = -1.0
     cover = set()
     for i, rank in enumerate(trial_ranks):
         cover.add(rank)

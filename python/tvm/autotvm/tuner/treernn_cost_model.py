@@ -21,7 +21,7 @@ logger = logging.getLogger('autotvm')
 
 class TreeRNNBlock(nn.Block):
     """Gluon Block of TreeRNN for Cost Prediction"""
-    def __init__(self, mode, voc_size, emb_dim, rnn_hidden_size,
+    def __init__(self, cell_type, voc_size, emb_dim, rnn_hidden_size,
                  decoder_hidden_size, max_n_children=12, num_mem_slots=0,
                  act='sigmoid'):
         super(TreeRNNBlock, self).__init__()
@@ -37,14 +37,14 @@ class TreeRNNBlock(nn.Block):
                 self.embed = nn.Embedding(voc_size, emb_dim)
                 self.embed.hybridize()
 
-            if mode == 'lstm':
+            if cell_type == 'lstm':
                 cell = ChildSumLSTMCell
                 self.cell_class = cell
-            elif mode == 'gru':
+            elif cell_type == 'gru':
                 cell = ChildSumGRUCell
                 self.cell_class = cell
             else:
-                raise ValueError("invalid mode " + mode)
+                raise ValueError("invalid mode " + cell_type)
 
             self.childsumrnn = cell(rnn_hidden_size, 0, input_size=emb_dim)
 
@@ -166,6 +166,7 @@ class TreeRNNCostModel(CostModel):
 
         self.learning_rate = rnn_params['learning_rate']
         self.train_batch_size = rnn_params['train_batch_size']
+        self.eval_batch_size = rnn_params['eval_batch_size']
         self.loss_type = rnn_params['loss_type']
         self.name = 'treernn' + "-" + self.loss_type
 
@@ -211,7 +212,7 @@ class TreeRNNCostModel(CostModel):
     def _base_model_discount(self, sample_size):
         return 1.0 / (2 ** (sample_size / 64.0))
 
-    def _train(self, train_data, plan_size, max_batch):
+    def _train(self, train_data, eval_data, plan_size, max_batch):
         tic = time.time()
 
         # begin training
@@ -274,7 +275,7 @@ class TreeRNNCostModel(CostModel):
                 if n_batch % self.rnn_params['train_eval_every'] == 0:
                     preds = []
                     labels = []
-                    for _, (son_, emb_idx_, add_fea_, label_, base_) in enumerate(train_data):
+                    for _, (son_, emb_idx_, add_fea_, label_, base_) in enumerate(eval_data):
                         emb_idx_, add_fea_, base_ = [x.as_in_context(ctx)
                                                      for x in [emb_idx_, add_fea_, base_]]
                         son_ = son_[0].asnumpy()
@@ -333,8 +334,11 @@ class TreeRNNCostModel(CostModel):
         train_data = mx.gluon.data.DataLoader(
             mx.gluon.data.ArrayDataset(sons, emb_idxs_train, add_feas_train, y_train, base_train),
             self.train_batch_size, shuffle=True)
+        eval_data = mx.gluon.data.DataLoader(
+            mx.gluon.data.ArrayDataset(sons, emb_idxs_train, add_feas_train, y_train, base_train),
+            self.eval_batch_size, shuffle=False)
 
-        self._train(train_data, plan_size, self.rnn_params['max_batch'])
+        self._train(train_data, eval_data, plan_size, self.rnn_params['max_batch'])
 
         logger.debug("TreeGRU train: %.2f\tobs: %d\tn_cache: %d",
                      time.time() - tic, len(xs),

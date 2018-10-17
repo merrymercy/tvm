@@ -139,9 +139,8 @@ def get_flatten_name(fea):
         # flatten line to feature
         line = fea
         inp, _ = decode(line)
-        target = _target.create(inp.target)
-        with target:
-            s, args = inp.template.instantiate(inp.config)
+        with inp.target:
+            s, args = inp.task.instantiate(inp.config)
         fea = get_itervar_feature(s, args)
 
     names = []

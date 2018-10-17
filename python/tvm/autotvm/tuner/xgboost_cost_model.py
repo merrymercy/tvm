@@ -69,7 +69,6 @@ class XGBoostCostModel(CostModel):
         self.log_interval = log_interval
 
         self.xgb_params = xgb_params
-        self.xgb_params['silent'] = 1
         if num_threads:
             self.xgb_params['nthread'] = num_threads
         self.bst = None
@@ -129,8 +128,7 @@ class XGBoostCostModel(CostModel):
 
         x_train = self._get_feature(xs)
         y_train = np.array(ys)
-        y_max = np.max(y_train)
-        y_train = y_train / max(y_max, 1e-8)
+        y_train = y_train / max(np.max(y_train), 1e-8)
 
         valid_index = y_train > 1e-6
         index = np.random.permutation(len(x_train))
@@ -200,8 +198,7 @@ class XGBoostCostModel(CostModel):
         xs, ys = np.array(xs), np.array(ys)
         x_train = xs
         y_train = ys
-        y_max = np.max(y_train)
-        y_train = y_train / max(y_max, 1e-8)
+        y_train = y_train / max(np.max(y_train), 1e-8)
 
         index = np.random.permutation(len(x_train))
         dtrain = xgb.DMatrix(x_train[index], y_train[index])

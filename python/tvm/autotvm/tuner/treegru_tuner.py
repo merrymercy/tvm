@@ -64,6 +64,7 @@ class TreeGRUTuner(ModelBasedTuner):
                     'train_batch_size': 128,
                     'train_eval_every': 10,
                     'train_early_stopping': 100,
+                    'eval_batch_size': 1024,
                 }
             elif loss_type == 'rank':
                 rnn_params = {
@@ -87,6 +88,7 @@ class TreeGRUTuner(ModelBasedTuner):
                     'train_batch_size': 128,
                     'train_eval_every': 10,
                     'train_early_stopping': 100,
+                    'eval_batch_size': 1024,
                 }
             else:
                 raise RuntimeError("Invalid loss type: " + loss_type)
