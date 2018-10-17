@@ -99,7 +99,7 @@ if __name__ == '__main__':
     print("number of workloads:", len(wkls))
 
     for i, wkl in enumerate(wkls.values()):
-        print(wkl['workload'])
+        print(i, wkl['workload'])
 
         print_basic(wkl)
         if args.var:

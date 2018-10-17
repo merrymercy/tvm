@@ -90,7 +90,7 @@ def tune_tasks(tasks,
 
             if args.dashboard:
                 if args.metajob_name:
-                    meta_job_uuid = str(uuid.uuid4())
+                    meta_job_uuid = 'abcdefg'
                 else:
                     meta_job_uuid = 'fffffff'
 
@@ -320,7 +320,7 @@ if __name__ == "__main__":
     dtype = args.dtype
 
     args.cache_file = args.cache_file or \
-            args.network + "." + args.target + "." + dtype + ".log"
+            args.network + "." + args.target + "." + args.tuner + "." + dtype + ".log"
 
     # device related
     device_key, target, target_host = get_target(args.target)
