@@ -241,7 +241,7 @@ def train_single_treernn(sons_train, emb_idxs_train, add_feas_train, y_train,
         # evaluate recall for several random batches on test data
         if e % print_every == 0:
             preds, labels = [], []
-            n_batch = 10 * eval_batch_size  # random pick 10 batches
+            n_batch = 1e9  # random pick 10 batches
             for i, (son, emb_idx, add_fea, label) in enumerate(test_data):
                 emb_idx, add_fea = [x.as_in_context(ctx) for x in [emb_idx, add_fea]]
                 son = son[0].asnumpy()
@@ -253,19 +253,10 @@ def train_single_treernn(sons_train, emb_idxs_train, add_feas_train, y_train,
                 if i > n_batch:
                     break
             preds, labels = np.concatenate(preds), np.concatenate(labels)
-            y_max_label = np.max(labels)
-
-            trials = np.argsort(preds)[::-1]
-            scores = labels[trials]
-
-            max_1 = np.max(scores[:100]) / y_max_label
-            max_2 = np.max(scores[:200]) / y_max_label
-            max_3 = np.max(scores[:300]) / y_max_label
-            max_info = "%.2f %.2f %.2f" % (max_1, max_2, max_3)
             recall = average_recall(preds, labels, plan_size)
 
-            logging.info("epoch: %d\tmoving loss: %.6f\tmax: %s\trecall: %.4f\telapsed: %.2f",
-                         e, np.sqrt(moving_loss), max_info, recall, time.time() - tic)
+            logging.info("epoch: %d\tmoving loss: %.6f\ttest-a-recall: %.4f\telapsed: %.2f",
+                         e, np.sqrt(moving_loss), recall, time.time() - tic)
 
     print("train done %.2f" % (time.time() - tic))
 
