@@ -97,7 +97,7 @@ class TreeGRUTuner(ModelBasedTuner):
                                       feature_type=feature_type,
                                       rnn_params=rnn_params,
                                       num_threads=num_threads,
-                                      log_interval=log_interval // 2)
+                                      log_interval=log_interval)
 
         if optimizer == 'sa':
             optimizer = SimulatedAnnealingOptimizer(task, log_interval=log_interval)

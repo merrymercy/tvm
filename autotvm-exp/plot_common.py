@@ -63,8 +63,14 @@ def draw(task_names, methods, output, show_name, args, x_max=None, col=4, yerr_m
             flop = query_flop(task_name)
             sum_curve = flop / sum_curve / 1e12
 
+            keep = 0
+            for i in range(len(sum_curve)):
+                for j in range(len(sum_curve[i])):
+                    keep = max(keep, sum_curve[i][j])
+                    sum_curve[i][j] = keep
+
             y = np.mean(sum_curve, axis=0)
-            y_err = np.std(sum_curve, axis=0)
+            y_err = np.std(sum_curve, axis=0) * 0.5
 
             if x_max is None:
                 x_max = len(y)

@@ -2,18 +2,20 @@ import argparse
 from plot_common import *
 
 methods = [
-    'xgb-rank', 'treernn-rank',
-    'ga', 'ga*3',
-    'random', 'random*3',
+    'xgb-rank', 'treegru-rank',
+    'ga', 'ga*2',
+    'random', 'random*2',
 ]
 
 def show_name(name):
     trans_table = {
         'xgb-rank': 'GBT',
-        'treernn-rank': 'TreeGRU',
+        'treegru-rank': 'TreeGRU',
         'random': 'Random',
+        'random*2': 'Random X 2',
         'random*3': 'Random X 3',
         'ga': 'GA',
+        'ga*2': 'GA X 2',
         'ga*3': 'GA X 3',
     }
 
@@ -31,5 +33,5 @@ if __name__ == '__main__':
         output = 'figures/tuners.pdf'
         task_names = task_names[:4]
 
-    draw(task_names, methods, output, show_name, args, col=4)
+    draw(task_names, methods, output, show_name, args, x_max=800, col=4)
 

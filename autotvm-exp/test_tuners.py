@@ -14,7 +14,7 @@ import nnvm.testing
 import nnvm.compiler
 import tvm
 from tvm import autotvm
-from tvm.autotvm.tuner import XGBTuner, GATuner, RandomTuner, GridSearchTuner
+from tvm.autotvm.tuner import XGBTuner, GATuner, RandomTuner, TreeGRUTuner
 from tvm.autotvm.task.nnvm_integration import TaskExtractEnv
 from tvm.contrib import util
 import tvm.contrib.graph_runtime as runtime
@@ -55,7 +55,8 @@ def tune_tasks(tasks,
     # create tmp files
     tmp_cache_file = cache_filename + ".tmp"
     if os.path.exists(tmp_cache_file):
-        os.remove(tmp_cache_file)
+        #os.remove(tmp_cache_file)
+        pass
 
     # get device name
     target = tasks[0].target
@@ -63,6 +64,9 @@ def tune_tasks(tasks,
 
     # tune tasks sequentially
     for i, tsk in enumerate(tasks):
+        if args.start_from and i+1 < args.start_from:
+            continue
+
         time_costs = []
         time_stamps = []
         for j in range(n_repeat):
@@ -71,8 +75,16 @@ def tune_tasks(tasks,
             # create tuner
             if tuner == 'xgb-rank':
                 tuner_obj = XGBTuner(tsk, loss_type='rank')
+            elif tuner == 'xgb-rank-d2':
+                tuner_obj = XGBTuner(tsk, loss_type='rank', diversity_filter_ratio=2)
+            elif tuner == 'xgb-rank-d4':
+                tuner_obj = XGBTuner(tsk, loss_type='rank', diversity_filter_ratio=4)
             elif tuner == 'xgb-reg':
                 tuner_obj = XGBTuner(tsk, loss_type='reg')
+            elif tuner == 'treegru-rank':
+                tuner_obj = TreeGRUTuner(tsk, loss_type='rank')
+            elif tuner == 'treegru-reg':
+                tuner_obj = TreeGRUTuner(tsk, loss_type='reg')
             elif tuner == 'ga':
                 tuner_obj = GATuner(tsk, pop_size=100)
             elif tuner == 'random':
@@ -307,6 +319,7 @@ if __name__ == "__main__":
     parser.add_argument("--dtype", type=str, default='float32')
     parser.add_argument('--dashboard', action='store_true')
     parser.add_argument("--metajob-name", type=str)
+    parser.add_argument("--start-from", type=int)
     parser.add_argument("--tuner", type=str, default='xgb-rank')
     args = parser.parse_args()
     np.random.seed(args.seed)
@@ -403,5 +416,5 @@ if __name__ == "__main__":
         print("Evaluate...")
         ftimer = module.module.time_evaluator("run", ctx, number=1, repeat=n_times)
         prof_res = ftimer()
-        print("\n" + args.network + " " + args.target + " " + str(prof_res), "\n")
+        print("\n" + args.network + " " + args.target + " " + str(prof_res.mean), "\n")
 
