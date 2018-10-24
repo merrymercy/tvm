@@ -52,7 +52,8 @@ class XGBoostCostModel(CostModel):
         The upper model used in transfer learning.
     """
     def __init__(self, task, feature_type, xgb_params=None,
-                 num_threads=None, log_interval=25, upper_model=None):
+                 num_threads=None, log_interval=25, upper_model=None,
+                 num_bst=1, acq_type='mean'):
         super(XGBoostCostModel, self).__init__()
 
         if xgb is None:
@@ -71,7 +72,6 @@ class XGBoostCostModel(CostModel):
         self.xgb_params = xgb_params
         if num_threads:
             self.xgb_params['nthread'] = num_threads
-        self.bst = None
 
         if feature_type == 'itervar':
             self.feature_extract_func = _extract_itervar_feature_index
@@ -89,6 +89,12 @@ class XGBoostCostModel(CostModel):
         self.upper_model = upper_model
         self.pool = None
         self.base_model = None
+
+        self.sample_size = 1
+
+        self.bst_list = []
+        self.num_bst = num_bst
+        self.acq_type = acq_type
 
         self._reset_pool(self.space, self.target, self.task)
 
@@ -119,8 +125,8 @@ class XGBoostCostModel(CostModel):
             return self.upper_model._get_pool()
         return self.pool
 
-    def _base_model_discount(self, sample_size):
-        return 1.0 / (2 ** (sample_size / 64.0))
+    def _base_model_discount(self):
+        return 1.0 / (2 ** (self.sample_size / 64.0))
 
     def fit(self, xs, ys, plan_size):
         tic = time.time()
@@ -131,28 +137,44 @@ class XGBoostCostModel(CostModel):
         y_train = y_train / max(np.max(y_train), 1e-8)
 
         valid_index = y_train > 1e-6
-        index = np.random.permutation(len(x_train))
-        dtrain = xgb.DMatrix(x_train[index], y_train[index])
 
+        pbase = None
         if self.base_model:
-            discount = self._base_model_discount(len(xs))
+            self.sample_size = len(xs)
+            discount = self._base_model_discount()
             if discount < 0.05:  # discard base model
                 self.base_model.upper_model = None
                 self.base_model = None
             else:
-                dtrain.set_base_margin(discount * self.base_model.predict(xs, output_margin=True))
+                pbase = discount * self.base_model.predict(xs, output_margin=True)
 
-        self.bst = xgb.train(self.xgb_params, dtrain,
-                             num_boost_round=8000,
-                             callbacks=[custom_callback(
-                                 stopping_rounds=20,
-                                 metric='tr-a-recall@%d' % plan_size,
-                                 evals=[(dtrain, 'tr')],
-                                 maximize=True,
-                                 fevals=[
-                                     xgb_average_recalln_curve_score(plan_size),
-                                 ],
-                                 verbose_eval=self.log_interval)])
+        if self.num_bst > 1:
+            pick_ratio = 0.8
+        else:
+            pick_ratio = 1
+
+        self.bst_list = []
+        for _ in range(self.num_bst):
+            index = np.random.choice(len(x_train), int(len(x_train) * pick_ratio),
+                                     replace=False)
+            dtrain = xgb.DMatrix(x_train[index], y_train[index])
+
+            if pbase:
+                dtrain.set_base_margin(pbase[index])
+
+            bst = xgb.train(self.xgb_params, dtrain,
+                            num_boost_round=8000,
+                            callbacks=[custom_callback(
+                                stopping_rounds=20,
+                                metric='tr-a-recall@%d' % plan_size,
+                                evals=[(dtrain, 'tr')],
+                                maximize=True,
+                                fevals=[
+                                    xgb_average_recalln_curve_score(plan_size),
+                                ],
+                                verbose_eval=self.log_interval)])
+
+            self.bst_list.append(bst)
 
         logger.debug("XGB train: %.2f\tobs: %d\terror: %d\tn_cache: %d",
                      time.time() - tic, len(xs),
@@ -200,21 +222,33 @@ class XGBoostCostModel(CostModel):
         y_train = ys
         y_train = y_train / max(np.max(y_train), 1e-8)
 
-        index = np.random.permutation(len(x_train))
-        dtrain = xgb.DMatrix(x_train[index], y_train[index])
-
         plan_size *= 2
-        self.bst = xgb.train(self.xgb_params, dtrain,
-                             num_boost_round=400,
-                             callbacks=[custom_callback(
-                                 stopping_rounds=100,
-                                 metric='tr-a-recall@%d' % plan_size,
-                                 evals=[(dtrain, 'tr')],
-                                 maximize=True,
-                                 fevals=[
-                                     xgb_average_recalln_curve_score(plan_size),
-                                 ],
-                                 verbose_eval=self.log_interval)])
+        if self.num_bst > 1:
+            pick_ratio = 0.8
+        else:
+            pick_ratio = 1
+
+        assert self.num_bst == 1
+
+        self.bst_list = []
+        for _ in range(self.num_bst):
+            index = np.random.choice(len(x_train), int(len(x_train) * pick_ratio),
+                                     replace=False)
+            dtrain = xgb.DMatrix(x_train[index], y_train[index])
+
+            bst = xgb.train(self.xgb_params, dtrain,
+                            num_boost_round=8000,
+                            callbacks=[custom_callback(
+                                stopping_rounds=20,
+                                metric='tr-a-recall@%d' % plan_size,
+                                evals=[(dtrain, 'tr')],
+                                maximize=True,
+                                fevals=[
+                                    xgb_average_recalln_curve_score(plan_size),
+                                ],
+                                verbose_eval=self.log_interval)])
+
+            self.bst_list.append(bst)
 
         logger.debug("XGB train: %.2f\tobs: %d", time.time() - tic, len(xs))
         return True
@@ -227,7 +261,26 @@ class XGBoostCostModel(CostModel):
             dtest.set_base_margin(self._base_model_discount() *
                                   self.base_model.predict(xs, output_margin=True))
 
-        return self.bst.predict(dtest, output_margin=output_margin)
+        preds = np.zeros((self.num_bst, len(xs)), dtype=np.float32)
+        for i, bst in enumerate(self.bst_list):
+            preds[i:, ] = bst.predict(dtest, output_margin=output_margin)
+
+        if self.num_bst == 1:
+            return preds[0]
+        else:
+            assert not output_margin
+
+            means = np.mean(preds, axis=0)
+            stds = np.std(preds, axis=0)
+
+            if self.acq_type == 'ei':
+                acq = _ei_max(means, stds, self.y_max, 0)
+            elif self.acq_type == 'ucb':
+                acq = _ucb_max(means, stds)
+            else:
+                acq = means
+
+            return acq
 
     def load_base_model(self, base_model):
         self.base_model = base_model
@@ -267,6 +320,18 @@ class XGBoostCostModel(CostModel):
 
     def __del__(self):
         self._close_pool()
+
+
+def _ei_max(mean, std, y_max, xi):
+    from scipy.stats import norm
+    """Acquisition function of Expected Improvement"""
+    z = (mean - (y_max + xi)) / std
+    return (mean - (y_max + xi)) * norm.cdf(z) + std * norm.pdf(z)
+
+def _ucb_max(mean, std, kappa=2.576):
+    """Acquisition function of Upper Confidence Bound"""
+    return mean + kappa * std
+
 
 
 _extract_space = None
