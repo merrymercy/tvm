@@ -81,6 +81,12 @@ def tune_tasks(tasks,
                 tuner_obj = XGBTuner(tsk, loss_type='rank', diversity_filter_ratio=4)
             elif tuner == 'xgb-reg':
                 tuner_obj = XGBTuner(tsk, loss_type='reg')
+            elif tuner == 'xgb-reg-mean':
+                tuner_obj = XGBTuner(tsk, loss_type='reg', acq_type='mean')
+            elif tuner == 'xgb-reg-ei':
+                tuner_obj = XGBTuner(tsk, loss_type='reg', acq_type='ei')
+            elif tuner == 'xgb-reg-ucb':
+                tuner_obj = XGBTuner(tsk, loss_type='reg', acq_type='ucb')
             elif tuner == 'treegru-rank':
                 tuner_obj = TreeGRUTuner(tsk, loss_type='rank')
             elif tuner == 'treegru-reg':

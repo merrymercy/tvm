@@ -53,7 +53,8 @@ class XGBTuner(ModelBasedTuner):
     """
     def __init__(self, task, plan_size=64,
                  feature_type='itervar', loss_type='rank', num_threads=None,
-                 optimizer='sa', diversity_filter_ratio=None, log_interval=50, xgb_params=None):
+                 optimizer='sa', diversity_filter_ratio=None, log_interval=50, xgb_params=None,
+                 acq_type=None):
 
         if xgb_params is None:
             if loss_type == 'reg':
@@ -89,11 +90,17 @@ class XGBTuner(ModelBasedTuner):
             else:
                 raise RuntimeError("Invalid loss type: " + loss_type)
 
+        if acq_type:
+            num_bst = 6
+        else:
+            num_bst = 1
+
         cost_model = XGBoostCostModel(task,
                                       feature_type=feature_type,
                                       xgb_params=xgb_params,
                                       num_threads=num_threads,
-                                      log_interval=log_interval // 2)
+                                      log_interval=log_interval // 2,
+                                      num_bst=num_bst)
         if optimizer == 'sa':
             optimizer = SimulatedAnnealingOptimizer(task, log_interval=log_interval)
         else:
