@@ -27,7 +27,7 @@ You are supposed to see a free "titanx" in the queue status.
 
 ## Test tuners
 
-### Evaluate Cost Model
+### Evaluate the Cost Models
 ```bash
 python3 test_tuners.py --tuner xgb-rank --n-trial 800
 python3 test_tuners.py --tuner treegru-rank --n-trail 800
@@ -37,7 +37,7 @@ python3 test_tuners.py --tuner random --n-trial 2000
 python3 plot_tuners.py
 ```
 
-### Evaluate Rank Loss and Regression Loss
+### Evaluate the Rank and Regression Loss Function
 ```bash
 python3 test_tuners.py --tuner xgb-rank --n-trial 800
 python3 test_tuners.py --tuner treegru-rank --n-trail 800
@@ -47,7 +47,7 @@ python3 test_tuners.py --tuner treegru-reg --n-trial 800
 python3 plot_rank_reg.py
 ```
 
-### Evaluate Diversity-aware Exploration
+### Evaluate the Diversity-aware Exploration
 ```bash
 python3 test_tuners.py --tuner xgb-rank --n-trial 800
 python3 test_tuners.py --tuner xgb-rank-d2 --n-trail 800
@@ -57,11 +57,11 @@ python3 plot_diversity.py
 ```
 
 
-### Evaluate Uncertainty-aware Exploration
+### Evaluate the Uncertainty-aware Exploration
 ```bash
 python3 test_tuners.py --tuner xgb-reg-mean --n-trial 800
 python3 test_tuners.py --tuner xgb-reg-ei --n-trail 800
 python3 test_tuners.py --tuner xgb-reg-ucb --n-trial 800
 
-python3 plot_diversity.py
+python3 plot_uncertainty.py
 ```
