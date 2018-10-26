@@ -21,7 +21,7 @@ import tvm.contrib.graph_runtime as runtime
 
 from util import log_to_dashboard, workload_to_name, log_value, array2str_round
 
-TRACKER_HOST = 'fleet'
+TRACKER_HOST = 'localhost'
 TRACKER_PORT = 9190
 
 def get_device_name(rpc_key, target):
