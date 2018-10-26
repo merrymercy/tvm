@@ -79,6 +79,8 @@ def tune_tasks(tasks,
                 tuner_obj = XGBTuner(tsk, loss_type='rank', diversity_filter_ratio=2)
             elif tuner == 'xgb-rank-d4':
                 tuner_obj = XGBTuner(tsk, loss_type='rank', diversity_filter_ratio=4)
+            elif tuner == 'xgb-rank-no-eps':
+                tuner_obj = XGBTuner(tsk, loss_type='rank', eps_greedy=0)
             elif tuner == 'xgb-reg':
                 tuner_obj = XGBTuner(tsk, loss_type='reg')
             elif tuner == 'xgb-reg-mean':

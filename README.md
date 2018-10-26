@@ -1,4 +1,4 @@
-**REDO EXPERIMENTS FOR THE NIPS PAPER**
+**REDO EXPERIMENTS FOR THE NIPS PAPER, SOME CODE IS IN [autotvm-exp](autotvm-exp)**
 
 -------------------------------------------------------------------------------------
 -------------------------------------------------------------------------------------

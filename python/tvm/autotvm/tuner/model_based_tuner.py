@@ -181,7 +181,7 @@ class ModelBasedTuner(Tuner):
         and then pick plan_size of them according to the diversity metric.
     """
 
-    def __init__(self, task, cost_model, model_optimizer, plan_size, diversity_filter_ratio=None):
+    def __init__(self, task, cost_model, model_optimizer, plan_size, diversity_filter_ratio=None, eps_greedy=0.05):
         super(ModelBasedTuner, self).__init__(task)
 
         # space
@@ -195,6 +195,7 @@ class ModelBasedTuner(Tuner):
         self.cost_model = cost_model
         self.model_optimizer = model_optimizer
         self.diversity_filter_ratio = diversity_filter_ratio
+        self.eps_greedy = eps_greedy
 
         if self.diversity_filter_ratio:
             assert self.diversity_filter_ratio >= 1, "Diversity filter ratio " \
@@ -225,7 +226,7 @@ class ModelBasedTuner(Tuner):
                     break
                 self.trial_pt += 1
 
-            if self.trial_pt >= len(self.trials) - int(0.05 * self.plan_size):
+            if self.trial_pt >= len(self.trials) - int(self.eps_greedy * self.plan_size):
                 # if the trial list is empty or
                 # the tuner is doing the last 5% trials (e-greedy), choose randomly
                 index = np.random.randint(len(self.space))
