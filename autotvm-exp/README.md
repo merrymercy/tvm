@@ -8,7 +8,7 @@
 1. Open one terminal to run the RPC tracker
 
 ```bash
-python3 -m tvm.exec.rpc_server
+python3 -m tvm.exec.rpc_tracker
 ```
 
 2. Open another terminal to run the RPC Server
@@ -27,6 +27,7 @@ You are supposed to see a free "titanx" in the queue status.
 
 ## Test tuners
 
+### Evaluate Cost Model
 ```bash
 python3 test_tuners.py --tuner xgb-rank --n-trial 800
 python3 test_tuners.py --tuner treegru-rank --n-trail 800
@@ -36,6 +37,7 @@ python3 test_tuners.py --tuner random --n-trial 2000
 python3 plot_tuners.py
 ```
 
+### Evaluate Rank Loss and Regression Loss
 ```bash
 python3 test_tuners.py --tuner xgb-rank --n-trial 800
 python3 test_tuners.py --tuner treegru-rank --n-trail 800
@@ -43,4 +45,23 @@ python3 test_tuners.py --tuner xgb-reg --n-trial 800
 python3 test_tuners.py --tuner treegru-reg --n-trial 800
 
 python3 plot_rank_reg.py
+```
+
+### Evaluate Diversity-aware Exploration
+```bash
+python3 test_tuners.py --tuner xgb-rank --n-trial 800
+python3 test_tuners.py --tuner xgb-rank-d2 --n-trail 800
+python3 test_tuners.py --tuner xgb-rank-d4 --n-trial 800
+
+python3 plot_diversity.py
+```
+
+
+### Evaluate Uncertainty-aware Exploration
+```bash
+python3 test_tuners.py --tuner xgb-reg-mean --n-trial 800
+python3 test_tuners.py --tuner xgb-reg-ei --n-trail 800
+python3 test_tuners.py --tuner xgb-reg-ucb --n-trial 800
+
+python3 plot_diversity.py
 ```
