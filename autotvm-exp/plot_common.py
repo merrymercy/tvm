@@ -15,6 +15,10 @@ task_names = [
     'resnet.C10.B1', 'resnet.C11.B1', 'resnet.C12.B1',
 ]
 
+select_task_names = [
+    'resnet.C1.B1', 'resnet.C2.B1', 'resnet.C5.B1', 'resnet.C6.B1',
+]
+
 def draw(task_names, methods, output, show_name, args, x_max=None, col=4, yerr_max=1e9,
          legend_ax=None, method2color=None, offset=None, add_cap=False):
     COL = col

@@ -2,21 +2,14 @@ import argparse
 from plot_common import *
 
 methods = [
-    'xgb-rank', 'treegru-rank',
-    'ga', 'ga*2',
-    'random', 'random*2',
+    'xgb-rank', 'xgb-rank-d2', 'xgb-rank-d4',
 ]
 
 def show_name(name):
     trans_table = {
-        'xgb-rank': 'GBT',
-        'treegru-rank': 'TreeGRU',
-        'random': 'Random',
-        'random*2': 'Random X 2',
-        'random*3': 'Random X 3',
-        'ga': 'GA',
-        'ga*2': 'GA X 2',
-        'ga*3': 'GA X 3',
+        'xgb-rank': '$\lambda$=1',
+        'xgb-rank-d2': '$\lambda$=2',
+        'xgb-rank-d4': '$\lambda$=4',
     }
 
     return trans_table.get(name, name)
@@ -28,9 +21,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.full:
-        output = 'figures/tuners_full.pdf'
+        output = 'figures/diversity_full.pdf'
     else:
-        output = 'figures/tuners.pdf'
+        output = 'figures/diversity.pdf'
         task_names = select_task_names
 
     draw(task_names, methods, output, show_name, args, x_max=800, col=4)
