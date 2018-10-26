@@ -28,9 +28,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.full:
-        output = 'figures/tuners_full.pdf'
+        output = 'figures/cost_model_full.pdf'
     else:
-        output = 'figures/tuners.pdf'
+        output = 'figures/cost_model.pdf'
         task_names = select_task_names
 
     draw(task_names, methods, output, show_name, args, x_max=800, col=4)

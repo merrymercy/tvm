@@ -34,7 +34,7 @@ python3 test_tuners.py --tuner treegru-rank --n-trail 800
 python3 test_tuners.py --tuner ga --n-trial 2000
 python3 test_tuners.py --tuner random --n-trial 2000
 
-python3 plot_tuners.py
+python3 plot_cost_models.py
 ```
 
 ### Evaluate the Rank and Regression Loss Function
