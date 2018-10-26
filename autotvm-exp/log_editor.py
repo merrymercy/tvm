@@ -85,6 +85,7 @@ def save_to_file(wkl, filename):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--i", type=str, help="Input filename")
+    parser.add_argument("--i2", type=str, help="Input filename")
     parser.add_argument("--var", action='store_true', help='show variance of measurement results')
     parser.add_argument("--save", action='store_true', help='save to file')
     args = parser.parse_args()
