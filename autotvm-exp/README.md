@@ -65,3 +65,12 @@ python3 test_tuners.py --tuner xgb-reg-ucb --n-trial 800
 
 python3 plot_uncertainty.py
 ```
+
+### Evaluate the Eps-greedy Policy
+```bash
+python3 test_tuners.py --tuner xgb-rank--n-trial 800
+python3 test_tuners.py --tuner xgb-rank-no-eps --n-trail 800
+
+python3 plot_eps_greedy.py
+```
+
