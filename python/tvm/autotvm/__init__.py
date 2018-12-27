@@ -30,3 +30,4 @@ from .task import template, get_config, create, ConfigSpace, ConfigEntity, \
     DispatchContext, FallbackContext, ApplyHistoryBest as apply_history_best, \
     ApplyGraphBest as apply_graph_best
 from .env import GLOBAL_SCOPE
+from .auto_schedule.schedule import create_schedule

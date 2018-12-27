@@ -3,6 +3,7 @@ from __future__ import absolute_import as _abs
 import os
 import tempfile
 import shutil
+import inspect
 try:
     import fcntl
 except ImportError:
@@ -143,6 +144,7 @@ def which(exec_name):
             return full_path
     return None
 
+
 def get_lower_ir(s):
     """Get lower ir code of a schedule.
     This is useful for debug, since you don't have to find all inputs/outputs
@@ -163,6 +165,7 @@ def get_lower_ir(s):
     outputs = s.outputs
 
     inputs = []
+
     def find_all(op):
         if isinstance(op, tensor.PlaceholderOp):
             inputs.append(op.output(0))
@@ -174,3 +177,40 @@ def get_lower_ir(s):
         find_all(out)
 
     return lower(s, inputs, simple_mode=True)
+
+def reg_enum_class(cls):
+    """Register a class as an enumerate class
+    support
+
+    Params
+    ------
+    cls: Class
+        The class
+
+    Examples
+    --------
+    >>> @reg_enum_class
+    >>> class AnimalType(object):
+    >>>     'DOG'       # dot
+    >>>     'CAT'       # cat
+    >>>     'ELEPHANT'  # elephant
+    >>>
+    >>> # Then you can use
+    >>> AnimalType.DOG                    # 0
+    >>> AnimalType.to_str(AnimalType.CAT) # return "CAT"
+    """
+    source = inspect.getsource(cls)
+    keys = []
+    for l in source.split('\n'):
+        l = l.strip()
+        if l.startswith("'") and not l.startswith('"""') and not l.startswith("'''"):
+            key = l[1:l[1:].index("'") + 1]
+            keys.append(key)
+
+    for i, key in enumerate(keys):
+        setattr(cls, key, i)
+
+    cls.keys = keys
+    cls.to_str = lambda x: cls.keys[x] if x is not None else "None"
+
+    return cls
