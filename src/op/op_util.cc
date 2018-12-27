@@ -159,7 +159,7 @@ std::vector<Stmt> MakeIfNest(const std::vector<Expr>& predicates) {
   Stmt no_op = Evaluate::make(0);
   std::vector<Stmt> nest;
   for (const Expr& cond : predicates) {
-    nest.emplace_back(IfThenElse::make(cond, no_op));
+    nest.emplace_back(IfThenElse::make(likely(cond), no_op));
   }
   return nest;
 }

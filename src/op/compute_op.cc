@@ -432,9 +432,6 @@ ComputeLoopNest ComputeLoopNest::make(
   ret.main_predicates = schedule::MakeBoundCheck(
       stage, dom_map, ret.main_vmap, false,
       std::unordered_set<IterVar>());
-  for (auto& e : ret.main_predicates) {
-    e = likely(e);
-  }
   if (stage->store_predicate.defined()) {
     ret.main_predicates.push_back(stage->store_predicate);
   }
@@ -473,9 +470,6 @@ ComputeLoopNest ComputeLoopNest::make(
         skip_iter, &(ret.init_vmap), debug_keep_trivial_loop);
     ret.init_predicates = schedule::MakeBoundCheck(
         stage, dom_map, ret.init_vmap, true, skip_iter);
-    for (auto& e : ret.init_predicates) {
-      e = likely(e);
-    }
   } else {
     CHECK_EQ(ret.main_nest.size(), stage->leaf_iter_vars.size() + 1);
     ret.num_common_loop = stage->leaf_iter_vars.size();

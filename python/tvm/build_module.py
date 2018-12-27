@@ -120,7 +120,7 @@ class BuildConfig(NodeBase):
         "auto_unroll_max_extent": 0,
         "unroll_explicit": True,
         "detect_global_barrier": False,
-        "partition_const_loop": False,
+        "partition_const_loop": True,
         "offset_factor": 0,
         "data_alignment": -1,
         "restricted_func": True,
@@ -366,8 +366,7 @@ def lower(sch,
     for f in lower_phase1:
         stmt = f(stmt)
     # Phase 2
-    if not simple_mode:
-        stmt = ir_pass.LoopPartition(stmt, cfg.partition_const_loop)
+    stmt = ir_pass.LoopPartition(stmt, cfg.partition_const_loop)
     stmt = ir_pass.VectorizeLoop(stmt)
     stmt = ir_pass.InjectVirtualThread(stmt)
     stmt = ir_pass.InjectDoubleBuffer(stmt, cfg.double_buffer_split_loop)
