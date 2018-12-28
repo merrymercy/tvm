@@ -711,7 +711,7 @@ Array<Tensor> Schedule::rfactor(const Tensor& tensor,
   const Reduce* reduce = compute_op->body[idx].as<Reduce>();
   CHECK(reduce) << "Can only rfactor non-inline reductions";
   predicates.push_back(reduce->condition);
-  Expr predicate = arith::ComputeReduce<ir::And>(predicates, Expr());
+  Expr predicate = likely(arith::ComputeReduce<ir::And>(predicates, Expr()));
 
   std::unordered_map<const Variable*, Expr> vsub;
 
@@ -742,7 +742,7 @@ Array<Tensor> Schedule::rfactor(const Tensor& tensor,
     body.emplace_back(Reduce::make(reduce->combiner,
                                    new_source,
                                    n->reduce_axis,
-                                   likely(predicate),
+                                   predicate,
                                    idx));
   }
   n->body = Array<Expr>(body);

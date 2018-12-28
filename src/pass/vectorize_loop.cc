@@ -486,7 +486,15 @@ class LoopVectorizer : public IRMutator {
         LOG(FATAL) << "Failed to vectorize loop with extent " << op->extent;
       }
       Var var(op->loop_var.node_);
-      return Vectorizer(var, lanes).Mutate(op->body);
+
+      if (lanes == 1) {
+        Stmt new_op = For::make(op->loop_var, op->min, op->extent,
+                                HalideIR::Internal::ForType::Serial, op->device_api,
+                                op->body);
+        return IRMutator::Mutate_(new_op.as<For>(), new_op);
+      } else {
+        return Vectorizer(var, lanes).Mutate(op->body);
+      }
     } else {
       return IRMutator::Mutate_(op, s);
     }
