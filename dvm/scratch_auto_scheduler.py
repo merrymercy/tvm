@@ -46,22 +46,35 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
 
-    with tvm.target.arm_cpu():
-        # A = tvm.placeholder((10, 2000,), name='A')
-        # D = topi.argmin(A, axis=1)
-
-        A = tvm.placeholder((2, 56, 64, 64), name='A')
-        #D = topi.nn.global_pool(A, 'max')
-
-        D = topi.nn.pool(A, (2, 2), (1, 1), (0, 0, 0, 0), 'max')
-
-        print(tvm.lower(tvm.create_schedule([D.op]), [A, D], simple_mode=True))
-
-        s = autotvm.create_schedule([A, D])
-        print(tvm.lower(s, [A, D], simple_mode=True))
-        exit()
+    # with tvm.target.cuda():
+    #     A = tvm.placeholder((32, 32, 15), name='A')
+    #     D = topi.min(A, axis=(1, 2))
+    #
+    #     #A = tvm.placeholder((1, 256, 7, 7), name='A')
+    #     # D = topi.nn.global_pool(A, 'max')
+    #
+    #     #D = topi.nn.pool(A, (2, 2), (1, 1), (0, 0, 0, 0), 'max')
+    #
+    #     # D1 = D2 = D3 = 128
+    #     #
+    #     # A = tvm.placeholder((D1, D2, D3), name='A')
+    #     #
+    #     # r1 = tvm.reduce_axis((0, D1), name='r1')
+    #     # r2 = tvm.reduce_axis((0, D2), name='r2')
+    #     # r3 = tvm.reduce_axis((0, D3), name='r3')
+    #     #
+    #     # D = tvm.compute((1,), lambda i: tvm.sum(A[r1, r2, r3] * A[r1, r2, r3], axis=[r1, r2, r3]), name='C')
+    #     #
+    #     # D = topi.nn.relu(D)
+    #
+    #     #print(tvm.lower(tvm.create_schedule([D.op]), [A, D], simple_mode=True))
+    #     print(tvm.lower(topi.generic.schedule_reduce([D]), [A, D], simple_mode=True))
+    #
+    #     s = autotvm.create_schedule([A, D])
+    #     print(tvm.lower(s, [A, D], simple_mode=True))
+    #     exit()
 
     N, CI, H, W, CO, kernel_size, stride, padding, dilation = 1, 64, 56, 56, 64, 3, 1, 1, 1
-    with tvm.target.cuda():
+    with tvm.target.arm_cpu():
         conv2d(N, CI, H, W, CO, kernel_size, stride, padding, dilation)
 

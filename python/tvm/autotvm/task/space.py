@@ -541,7 +541,8 @@ class OtherOptionSpace(TransformSpace):
         super(OtherOptionSpace, self).__init__()
 
         candidate = kwargs["candidate"]
-        self.entities = [OtherOptionEntity(x) for x in candidate]
+        self.entities = [OtherOptionEntity(i, len(candidate), x)
+                         for i, x in enumerate(candidate)]
 
     @staticmethod
     def get_num_output(axes, policy, **kwargs):
@@ -553,7 +554,9 @@ class OtherOptionSpace(TransformSpace):
 
 class OtherOptionEntity(object):
     """The parameter entity for general option, with a detailed value"""
-    def __init__(self, val):
+    def __init__(self, index, total_size, val):
+        self.index = index
+        self.total_size = total_size
         self.val = val
 
     def __repr__(self):
@@ -818,7 +821,10 @@ class ConfigEntity(ConfigSpace):
                     tmp[_ann_to_number[ann]] = 1
                     fea.extend(tmp)
             elif isinstance(v, OtherOptionEntity):
-                fea.append(v.val)
+                # one-hot encoding
+                tmp = [0] * len(v.total_size)
+                tmp[v.index] = 1
+                fea.extend(tmp)
         return np.array(fea, dtype=np.float32)
 
     def get_other_option(self):
@@ -851,7 +857,7 @@ class ConfigEntity(ConfigSpace):
             elif isinstance(v, AnnotateEntity):
                 entity_map.append((k, 'an', v.anns))
             elif isinstance(v, OtherOptionEntity):
-                entity_map.append((k, 'ot', v.val))
+                entity_map.append((k, 'ot', v.index, v.total_size, v.val))
             else:
                 raise RuntimeError("Invalid entity instance: " + v)
         ret['e'] = entity_map
@@ -880,15 +886,15 @@ class ConfigEntity(ConfigSpace):
         entity_map = OrderedDict()
 
         for item in json_dict["e"]:
-            key, knob_type, knob_args = item
+            key, knob_type = item[:2]
             if knob_type == 'sp':
-                entity = SplitEntity(knob_args)
+                entity = SplitEntity(item[2])
             elif knob_type == 're':
-                entity = ReorderEntity(knob_args)
+                entity = ReorderEntity(item[2])
             elif knob_type == 'an':
-                entity = AnnotateEntity(knob_args)
+                entity = AnnotateEntity(item[2])
             elif knob_type == 'ot':
-                entity = OtherOptionEntity(knob_args)
+                entity = OtherOptionEntity(item[2], item[3], item[4])
             else:
                 raise RuntimeError("Invalid config knob type: " + knob_type)
             entity_map[str(key)] = entity

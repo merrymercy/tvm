@@ -366,7 +366,8 @@ class FallbackContext(DispatchContext):
         cfg = FallbackConfigEntity()
 
         # cache this config
-        self.memory[key] = cfg
+        if workload is not None:
+            self.memory[key] = cfg
         return cfg
 
     def clear_cache(self, target, workload):
