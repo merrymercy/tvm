@@ -183,6 +183,9 @@ def schedule_complex_reduce_cpu(s, cfg, node):
     op = node.op
     output = node.compute_at_loc.op
 
+    n_sp = len(s[op].op.axis)
+    n_rd = len(s[op].op.reduce_axis)
+
     # ==================== Define Configuration Space ====================
     prefix = "#1-" + node.name
     tile_level = 3
@@ -196,15 +199,40 @@ def schedule_complex_reduce_cpu(s, cfg, node):
         rd_chains = []
         for i, axis in enumerate(s[op].op.reduce_axis):
             ch = cfg.define_split(prefix + "_rd_tile_" + str(i), _get_axis_length(axis),
-                                  num_outputs=tile_level)
+                                  num_outputs=tile_level-1)
             rd_chains.append(ch)
 
-        cfg.define_annotate("ann_spatial", [ch[-1] for ch in sp_chains], policy='try_unroll_vec')
-        cfg.define_annotate("ann_reduce", [ch[-1] for ch in rd_chains], policy='try_unroll')
+        cfg.define_annotate(prefix + "_ann_spatial",
+                            [ch[-1] for ch in sp_chains], policy='try_unroll_vec')
+        cfg.define_annotate(prefix + "_ann_reduce",
+                            [ch[-1] for ch in rd_chains], policy='try_unroll')
 
     # ========================== Heuristic Fill ==========================
-    # if isinstance(cfg, FallbackConfigEntity) or opts.TUNING_LEVEL < 1:
-    #     cfg[prefix + '_vec'].val = _is_strict_vectorizable(node, axes[-1])
+    if isinstance(cfg, FallbackConfigEntity) or opts.TUNING_LEVEL < 1:
+        for i in range(n_sp):
+            cfg[prefix + "_ann_spatial"].anns[i] = "none"
+        for i in range(n_rd):
+            cfg[prefix + "_ann_reduce"].anns[i] = "none"
+
+        vec_able = _is_strict_vectorizable(node, s[op].op.axis[-1])
+        if vec_able:
+            cfg[prefix + "_ann_spatial"].anns[-1] = "vec"
+        else:
+            cfg[prefix + "_ann_spatial"].anns[-1] = "unroll"
+
+        for i, axis in enumerate(s[op].op.reduce_axis):
+            cfg[prefix + "_rd_tile_" + str(i)].size = [_get_axis_length(axis), 1]
+
+        ndim = min(2, n_sp)
+        constraints = [1] * (n_sp - ndim) + [opts.TILE_SIZE] * ndim
+        if vec_able:
+            constraints[-1] = opts.VEC_SIZE
+
+        for i, axis in enumerate(s[op].op.axis):
+            length = _get_axis_length(axis)
+            inner = [x for x in get_factors(length) if x <= constraints[i]][-1]
+            outer = length // inner
+            cfg[prefix + "_sp_tile_" + str(i)].size = [outer, 1, inner]
 
     # =========================== Apply Config ===========================
     sp_chains = []
@@ -217,21 +245,22 @@ def schedule_complex_reduce_cpu(s, cfg, node):
         ch = cfg[prefix + "_rd_tile_" + str(i)].apply(s, op, axis)
         rd_chains.append(ch)
 
-    cfg["ann_spatial"].apply(s, op, [ch[-1] for ch in sp_chains],
-                             max_unroll=opts.MAX_UNROLL,
-                             axis_lens=[cfg[prefix + "_sp_tile_" + str(i)].size[-1]
-                                        for i in range(len(s[op].op.axis))])
-    cfg["ann_reduce"].apply(s, op, [ch[-1] for ch in rd_chains],
-                            max_unroll=opts.MAX_UNROLL,
-                            axis_lens=[cfg[prefix + "_rd_tile_" + str(i)].size[-1]
-                                       for i in range(len(s[op].op.reduce_axis))])
+    cfg[prefix + "_ann_spatial"].apply(s, op, [ch[-1] for ch in sp_chains],
+                                       max_unroll=opts.MAX_UNROLL,
+                                       axis_lens=[cfg[prefix + "_sp_tile_" + str(i)].size[-1]
+                                                  for i in range(len(sp_chains))])
+    cfg[prefix + "_ann_reduce"].apply(s, op, [ch[-1] for ch in rd_chains],
+                                      max_unroll=opts.MAX_UNROLL,
+                                      axis_lens=[cfg[prefix + "_rd_tile_" + str(i)].size[-1]
+                                                 for i in range(len(rd_chains))])
 
     # reorder
     all_chains = sp_chains + rd_chains
     all_axes = []
     for i in range(tile_level):
         for ch in all_chains:
-            all_axes.append(ch[i])
+            if i < len(ch):
+                all_axes.append(ch[i])
 
     s[op].reorder(*all_axes)
 
