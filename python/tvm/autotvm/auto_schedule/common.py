@@ -5,8 +5,11 @@ class AutoScheduleOptions(object):
     # public accessors
     NUM_THREADS = 16
     VEC_SIZE = 8
-    TUNING_LEVEL = 0
-    PARALLEL_THRESHOLD = 1024
+    TUNING_LEVEL = 1  # 0 -> tune nothing, 3 -> tune all knobs. 1 is the typical value
+
+    MAX_UNROLL = 32
+
+    MAX_GPU_THREADS = 1024
 
     _current = None
 

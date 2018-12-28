@@ -1,4 +1,3 @@
-
 """Stage analysis"""
 
 from ... import ir_pass, tensor, expr
@@ -45,12 +44,14 @@ class StageEdge:
 
 class StageNode:
     """A Stage in the computation graph"""
-    def __init__(self, op, shape):
+    def __init__(self, op, shape, ct):
         self.op = op
         self.shape = shape
         self.type = None
         self.read_edges = {}   # dict (StageNode -> StageEdge)
         self.write_edges = {}  # dict (StageNode -> StageEdge)
+
+        self.name = op.name + "_" + str(ct)
 
         self.compute_at_loc = None  # StageNode or None (root)
         self.compute_at_type = ComputeAtType.COMPUTE_ROOT
@@ -73,6 +74,7 @@ def _gather_access(body):
 
     ir_pass.PostOrderVisit(body, _gather)
     return access
+
 
 def _gather_vars(args):
     """gather all iter vars"""
@@ -103,6 +105,7 @@ def _reduce_node_has_reuse(node):
         return True
     else:
         return False
+
 
 def _remove_const_shift(args):
     """extract access pattern but remove const shift.
@@ -178,7 +181,7 @@ def build_stage_graph(bufs):
             continue
 
         # TODO(lmzheng): handle multiple output
-        node_dict[x.op] = StageNode(x.op, x.shape)
+        node_dict[x.op] = StageNode(x.op, x.shape, i)
         if isinstance(x.op, tensor.PlaceholderOp):
             pass
         elif isinstance(x.op, tensor.ComputeOp):
@@ -246,6 +249,7 @@ def annotate_compute_location(node_dict, bufs):
 
     already_complex = set()  # record group that already has a complex op
 
+    # simple greedy fusion
     for n in _topo_sort(node_dict):
         if n.op in output_ops:
             _compute_root(n)
@@ -278,6 +282,14 @@ def annotate_compute_location(node_dict, bufs):
                 _compute_root(n)
         else:
             _compute_root(n)
+
+    root_to_master = dict()
+    for n in node_dict.values():
+        if n.compute_at_type == ComputeAtType.COMPUTE_FUSE:
+            assert n.compute_at_loc not in root_to_master
+            root_to_master[n.compute_at_loc] = n
+
+    return root_to_master
 
 
 def print_stage_graph(node_dict):
