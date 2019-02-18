@@ -23,7 +23,7 @@ namespace relay {
  *
  * \sa tvm/ir_functor.h
  *
- * \tparam FType function signiture
+ * \tparam FType function signature
  *  This type is only defined for FType with function signature R(const Expr&,
  * Args...)
  */
@@ -89,6 +89,7 @@ class ExprFunctor<R(const Expr& n, Args...)> {
   virtual R VisitExpr_(const OpNode* op,
                        Args... args) EXPR_FUNCTOR_DEFAULT;
   virtual R VisitExpr_(const TupleGetItemNode* op, Args... args) EXPR_FUNCTOR_DEFAULT;
+  virtual R VisitExpr_(const IndexNode *op, Args... args) EXPR_FUNCTOR_DEFAULT;
   virtual R VisitExprDefault_(const Node* op, Args...) {
     throw Error(std::string("Do not have a default for ") + op->type_key());
   }
@@ -108,6 +109,7 @@ class ExprFunctor<R(const Expr& n, Args...)> {
     RELAY_EXPR_FUNCTOR_DISPATCH(IfNode);
     RELAY_EXPR_FUNCTOR_DISPATCH(OpNode);
     RELAY_EXPR_FUNCTOR_DISPATCH(TupleGetItemNode);
+    RELAY_EXPR_FUNCTOR_DISPATCH(IndexNode);
     return vtable;
   }
 };
@@ -133,6 +135,7 @@ class ExprVisitor
   void VisitExpr_(const IfNode* op) override;
   void VisitExpr_(const OpNode* op) override;
   void VisitExpr_(const TupleGetItemNode* op) override;
+  void VisitExpr_(const IndexNode* op) override;
   virtual void VisitType(const Type& t);
 
  protected:
@@ -168,6 +171,7 @@ class ExprMutator
   Expr VisitExpr_(const LetNode* op) override;
   Expr VisitExpr_(const IfNode* op) override;
   Expr VisitExpr_(const TupleGetItemNode* op) override;
+  Expr VisitExpr_(const IndexNode *op) override;
   /*!
    * \brief Used to visit the types inside of expressions.
    *

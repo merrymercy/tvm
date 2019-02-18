@@ -480,3 +480,32 @@ def reverse_reshape(data, newshape):
     if isinstance(newshape, int):
         newshape = [newshape]
     return _make._contrib_reverse_reshape(data, list(newshape))
+
+
+def compute(expr, shape, reduction=[]):
+    """Compute a new tensor with index expression
+
+    Parameters
+    ----------
+    expr : relay.Expr
+        The index expression to compute the new tensor
+
+    shape: str
+        The shape of the new tensor
+
+    reduction: str
+        The extent of the reduction dimensions
+
+    Returns
+    -------
+    ret : relay.Expr
+        The new tensor.
+    """
+    return _make.compute(expr, shape, reduction)
+
+def SUM(expr):
+    return _make.SUM(expr)
+def MAX(expr):
+    return _make.MAX(expr)
+def MIN(expr):
+    return _make.MIN(expr)

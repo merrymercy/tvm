@@ -434,6 +434,32 @@ class TupleGetItemNode : public ExprNode {
 
 RELAY_DEFINE_NODE_REF(TupleGetItem, TupleGetItemNode, Expr);
 
+
+/*! \brief Index expression of a tensor */
+class Index;
+class IndexNode : public ExprNode {
+ public:
+  /*! \brief The base tensor */
+  Expr base;
+  /*! \brief The indices */
+  tvm::Array<relay::Expr> indices;
+
+  void VisitAttrs(tvm::AttrVisitor* v) final {
+    v->Visit("base", &base);
+    v->Visit("indices", &indices);
+    v->Visit("span", &span);
+    v->Visit("_checked_type_", &checked_type_);
+  }
+
+  TVM_DLL static Index make(Expr base, Array<Expr> indices);
+
+  static constexpr const char * _type_key = "relay.Index";
+  TVM_DECLARE_NODE_TYPE_INFO(IndexNode, ExprNode);
+};
+
+RELAY_DEFINE_NODE_REF(Index, IndexNode, Expr);
+
+
 /*!
  * \brief Base class of the temporary expression.
  *

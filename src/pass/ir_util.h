@@ -179,6 +179,56 @@ inline bool GetRamp1Base(Expr index, int lanes, Expr *base) {
   *base = r->base;
   return true;
 }
+
+/*!
+ * \brief Convert Halide Type to DLPack Type
+ * \param type Halide Type
+ * \return new_type DLPack Type
+ */
+inline DLDataType HalideType2DLTensorType(Type type) {
+  DLDataTypeCode code = kDLInt;
+  switch (type.code()) {
+    case halideir_type_int: code = kDLInt; break;
+    case halideir_type_uint: code = kDLUInt; break;
+    case halideir_type_float: code = kDLFloat; break;
+    default: LOG(FATAL) << "Invalid type in DLDataType"; break;
+  }
+  return DLDataType{code, static_cast<uint8_t>(type.bits()),
+                    static_cast<uint16_t>(type.lanes())};
+}
+
+/*!
+ * \brief Dispatch code according to the type in dlpack
+ */
+#define DLPACK_TYPE_SWITCH(type, DType, ...)            \
+  if (type.code == kDLInt && type.bits == 32) {         \
+    typedef int32_t DType;                              \
+    {__VA_ARGS__}                                       \
+  } else if (type.code == kDLInt && type.bits == 16) {  \
+    typedef int16_t DType;                              \
+    {__VA_ARGS__}                                       \
+  } else if (type.code == kDLInt && type.bits == 8) {   \
+    typedef int8_t DType;                               \
+    {__VA_ARGS__}                                       \
+  } else if (type.code == kDLUInt && type.bits == 32) { \
+    typedef uint32_t DType;                             \
+    {__VA_ARGS__}                                       \
+  } else if (type.code == kDLUInt && type.bits == 16) { \
+    typedef uint16_t DType;                             \
+    {__VA_ARGS__}                                       \
+  } else if (type.code == kDLUInt && type.bits == 8) {  \
+    typedef uint8_t DType;                              \
+    {__VA_ARGS__}                                       \
+  } else if (type.code == kDLFloat && type.bits == 32) {\
+    typedef float DType;                                \
+    {__VA_ARGS__}                                       \
+  } else if (type.code == kDLFloat && type.bits == 64) {\
+    typedef double DType;                               \
+    {__VA_ARGS__}                                       \
+  } else {                                              \
+    LOG(FATAL) << "unknown data type";                  \
+  }
+
 }  // namespace ir
 }  // namespace tvm
 #endif  // TVM_PASS_IR_UTIL_H_

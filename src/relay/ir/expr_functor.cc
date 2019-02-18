@@ -157,6 +157,26 @@ Expr ExprMutator::VisitExpr_(const TupleGetItemNode* g) {
   }
 }
 
+Expr ExprMutator::VisitExpr_(const IndexNode* g) {
+  bool unchanged = true;
+
+  auto base = this->Mutate(g->base);
+  unchanged &= base.same_as(g->base);
+
+  tvm::Array<Expr> indices;
+  for (auto index : g->indices) {
+    auto new_index = this->Mutate(index);
+    indices.push_back(new_index);
+    unchanged &= new_index.same_as(index);
+  }
+
+  if (unchanged) {
+    return GetRef<Expr>(g);
+  } else {
+    return IndexNode::make(base, indices);
+  }
+}
+
 Type ExprMutator::VisitType(const Type& t) { return t; }
 
 void ExprVisitor::VisitExpr(const Expr& expr) {
@@ -224,6 +244,13 @@ void ExprVisitor::VisitExpr_(const OpNode* op) { return; }
 
 void ExprVisitor::VisitExpr_(const TupleGetItemNode* op) {
   this->VisitExpr(op->tuple);
+}
+
+void ExprVisitor::VisitExpr_(const IndexNode* op) {
+  this->VisitExpr(op->base);
+  for (auto index: op->indices) {
+    this->VisitExpr(index);
+  }
 }
 
 void ExprVisitor::VisitType(const Type& t) { return; }

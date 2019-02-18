@@ -57,7 +57,8 @@ expr
   // operators
   : '(' expr ')'                              # parens
   // function application
-  | expr '(' (expr (',' expr)*)? ')'          # call
+  | expr '(' (expr (',' expr)*)? ((',' attr)*)? ')' # call
+  | expr '[' (expr (',' expr)*)? ']'          # index
   | '-' expr                                  # neg
   | expr op=('*'|'/') expr                    # binOp
   | expr op=('+'|'-') expr                    # binOp
@@ -88,7 +89,7 @@ expr
 
   | ident                                     # identExpr
   | scalar                                    # scalarExpr
-  // | expr '.' NAT                           # project
+  | expr '.' NAT                              # project
   // | 'debug'                                # debug
   ;
 

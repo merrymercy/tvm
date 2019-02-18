@@ -523,3 +523,22 @@ def gradient(expr, mod=None):
       The output expression.
     """
     return _ir_pass.first_order_gradient(expr, mod)
+
+
+def parse_compute(expr):
+    """
+    Parse index expression for compute op.
+    This pass should be called before fuse_ops to preserve the original
+    index expression for parsing.
+
+    Parameters
+    ----------
+    expr : tvm.relay.Expr
+        The input expression, which is a Function or a GlobalVar.
+
+    Returns
+    -------
+    expr : tvm.relay.Expr
+      The transformed expr
+    """
+    return _ir_pass.parse_compute(expr)

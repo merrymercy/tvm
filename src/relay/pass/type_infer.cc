@@ -59,7 +59,33 @@ bool TupleGetItemRel(const Array<Type>& types,
 TVM_REGISTER_NODE_TYPE(TupleGetItemAttrs);
 TVM_REGISTER_API("tvm.relay.type_relation.TupleGetItem")
 .set_body_typed<bool(const Array<Type>&, int, const Attrs&, const TypeReporter&)>(
-    TupleGetItemRel);
+TupleGetItemRel);
+
+
+bool IndexRel(const Array<Type>& types,
+              int num_inputs,
+              const Attrs& attrs,
+              const TypeReporter& reporter) {
+  if (types[0].as<IncompleteTypeNode>()) {
+    return false;
+  }
+  const auto* data = types[0].as<TensorTypeNode>();
+  CHECK(data != nullptr)
+    << "Index expect base type to be TensorType "
+    << " get " << types[0] << " instead";
+  CHECK_EQ(data->shape.size(), num_inputs-1);
+  for (int i = 1; i < num_inputs; ++i) {
+    reporter->Assign(types[i], TensorTypeNode::make({}, Int(32)));
+  }
+  reporter->Assign(types[num_inputs], TensorTypeNode::make({}, data->dtype));
+  return true;
+}
+
+TVM_REGISTER_API("tvm.relay.type_relation.Index")
+.set_body_typed<bool(const Array<Type>&, int, const Attrs&, const TypeReporter&)>(
+IndexRel);
+
+
 
 struct ResolvedTypeInfo {
   explicit ResolvedTypeInfo(Type checked_type, Array<Type> type_args)
@@ -116,6 +142,7 @@ class TypeInferencer : private ExprFunctor<Type(const Expr&)> {
   // relation function
   TypeRelationFn tuple_getitem_rel_;
   TypeRelationFn make_tuple_rel_;
+  TypeRelationFn index_rel_;
 
   // Perform unification on two types and report the error at the expression
   // or the span of the expression.
@@ -224,6 +251,22 @@ class TypeInferencer : private ExprFunctor<Type(const Expr&)> {
     attrs->index = op->index;
     solver_.AddConstraint(TypeRelationNode::make(
         tuple_getitem_rel_, {tuple_type, rtype}, 1, Attrs(attrs)), GetRef<TupleGetItem>(op));
+    return rtype;
+  }
+
+  Type VisitExpr_(const IndexNode* op) final {
+    if (!index_rel_.defined()) {
+      index_rel_ = TypeRelationFn(EnvFunc::Get("tvm.relay.type_relation.Index").node_);
+    }
+    Array<Type> args;
+    args.push_back(GetType(op->base));
+    for (auto x : op->indices) {
+      args.push_back(GetType(x));
+    }
+    Type rtype = IncompleteTypeNode::make(TypeVarNode::Kind::kType);
+    args.push_back(rtype);
+    solver_.AddConstraint(TypeRelationNode::make(
+       index_rel_, args, static_cast<int32_t>(args.size()) - 1, Attrs(nullptr)), GetRef<Index>(op));
     return rtype;
   }
 
@@ -461,6 +504,10 @@ class TypeInferencer::Resolver : public ExprMutator {
   }
 
   Expr VisitExpr_(const TupleGetItemNode* op) final {
+    return AttachCheckedType(op);
+  }
+
+  Expr VisitExpr_(const IndexNode* op) final {
     return AttachCheckedType(op);
   }
 

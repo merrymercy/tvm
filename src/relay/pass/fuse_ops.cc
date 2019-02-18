@@ -255,6 +255,17 @@ class IndexedForwardGraph::Creator : private ExprVisitor {
     this->AddNode(op);
   }
 
+  void VisitExpr_(const IndexNode* op) {
+    CHECK(graph_.node_map.count(op));
+    Node* node = graph_.node_map.at(op);
+    this->Update(op->base, node, kOpaque);
+    for (const Expr& index: op->indices) {
+      this->Update(index, node, kOpaque);
+    }
+    ExprVisitor::VisitExpr_(op);
+    this->AddNode(op);
+  }
+
   void VisitExpr_(const VarNode* op) {
     this->AddNode(op);
   }

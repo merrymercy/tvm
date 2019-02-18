@@ -56,6 +56,7 @@ Call = expr.Call
 Let = expr.Let
 If = expr.If
 TupleGetItem = expr.TupleGetItem
+Index = expr.Index
 
 # ExprFunctor
 ExprFunctor = expr_functor.ExprFunctor

@@ -14,7 +14,7 @@ namespace relay {
 
 /*!
  * \brief the text value used in text printer.
- * Defined as a struct for future compatibility reason
+ * Defined as a structure for future compatibility reason
  */
 struct TextValue {
   /*! \brief The str representation */
@@ -359,6 +359,26 @@ class TextPrinter :
     TextValue id = this->AllocTempVar();
     this->PrintIndent();
     stream_ << id << " = " << tuple << "." << op->index << "";
+    this->PrintEndInst("\n");
+    return id;
+  }
+
+  TextValue VisitExpr_(const IndexNode* op) final {
+    TextValue base = GetValue(op->base);
+    std::vector<TextValue> indices;
+    for (Expr x : op->indices) {
+      indices.emplace_back(GetValue(x));
+    }
+    TextValue id = this->AllocTempVar();
+    this->PrintIndent();
+    stream_ << id << " = " << base << "[";
+    for (size_t i = 0; i < indices.size(); ++i) {
+      stream_ << indices[i];
+      if (i != indices.size() - 1) {
+        stream_ << ", ";
+      }
+    }
+    stream_ << "]";
     this->PrintEndInst("\n");
     return id;
   }

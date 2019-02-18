@@ -326,7 +326,22 @@ class TupleGetItem(Expr):
         self.__init_handle_by_constructor__(
             _make.TupleGetItem, tuple_value, index)
 
+@register_relay_node
+class Index(Expr):
+    """
 
+    Parameters
+    ----------
+    base: tvm.relay.Expr
+        The base tensor
+    indices: List[tvm.relay.Expr]
+        The n-dimensional index
+    """
+    def __init__(self, base, indices):
+        self.__init_handle_by_constructor__(
+            _make.Index, base, indices)
+
+@register_relay_node
 class TempExpr(Expr):
     """Baseclass of all TempExpr.
 

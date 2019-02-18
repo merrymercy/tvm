@@ -10,11 +10,9 @@ from typing import TypeVar, Deque, Tuple, Optional, Union, NamedTuple, List, Cal
 
 import tvm
 
-from . import module
+from . import module, expr, ty, op, create_executor
+from .backend import interpreter
 from .base import Span, SourceName
-from . import expr
-from . import ty
-from . import op
 
 
 class ParseError(Exception):
@@ -101,6 +99,7 @@ def spanify(f):
         return ast
     return _wrapper
 
+
 # TODO(@jmp): Use https://stackoverflow.com/q/13889941
 # to figure out how to get ANTLR4 to be more unhappy about syntax errors
 class ParseTreeToRelayIR(RelayVisitor):
@@ -116,9 +115,9 @@ class ParseTreeToRelayIR(RelayVisitor):
         self.global_var_scope = deque()             # type: Scope[expr.GlobalVar]
         self.type_param_scopes = deque([deque()])   # type: Scopes[ty.TypeVar]
         self.graph_expr = []                        # type: List[expr.Expr]
+        self.executor = None                        # type: Scope[interpreter.Interpreter]
 
         super(ParseTreeToRelayIR, self).__init__()
-
 
     def enter_var_scope(self):
         # type: () -> None
@@ -311,6 +310,15 @@ class ParseTreeToRelayIR(RelayVisitor):
 
         return relay_op(arg0, arg1)
 
+    def visitIndex(self, ctx):
+        # type: (RelayParser.IndexContext) -> expr.Index
+        visited_exprs = self.visit_list(ctx.expr())
+
+        base = visited_exprs[0]
+        indices = visited_exprs[1:]
+
+        return expr.Index(base, indices)
+
     @spanify
     def visitVar(self, ctx):
         # type: (RelayParser.VarContext) -> expr.Var
@@ -393,6 +401,20 @@ class ParseTreeToRelayIR(RelayVisitor):
         func = visited_exprs[0]
         args = visited_exprs[1:]
 
+        attrs = dict(self.visit_list(ctx.attr()))
+
+        if hasattr(func, "name"):
+            if hasattr(op, func.name):
+                # compute constant attributes
+                kvs = list(attrs.items())
+                for k, v in kvs:
+                    attrs[k] = self._relay_expr_to_const(v)
+
+                return getattr(op, func.name)(*args, **attrs)
+            else:
+                raise ParseError("Attrs are ignored for the op " + func.name +
+                                 " because the parse cannot recognize this op")
+
         return expr.Call(func, args, None, None)
 
     @spanify
@@ -431,6 +453,13 @@ class ParseTreeToRelayIR(RelayVisitor):
 
         kont = self.visit(ctx.expr(1))
         return kont
+
+    def visitProject(self, ctx):
+        # type: (RelayParser.GraphContext) -> expr.Expr
+        base = self.visit(ctx.expr())
+        index = self.visit(ctx.NAT())
+
+        return expr.TupleGetItem(base, index)
 
     # Types
 
@@ -500,6 +529,28 @@ class ParseTreeToRelayIR(RelayVisitor):
         ret_type = types[-1]
 
         return ty.FuncType(arg_types, ret_type, [], None)
+
+    @staticmethod
+    def _tvm_nd_to_const(v):
+        # type: (expr.Expr) -> object
+        if isinstance(v, interpreter.TupleValue):
+            return tuple([ParseTreeToRelayIR._tvm_nd_to_const(x) for x in v])
+        elif isinstance(v, interpreter.TensorValue):
+            v = v.asnumpy()
+            if v.size != 1:
+                raise RuntimeError("Only support scalar constant, but get shape " + str(v.shape))
+            return v.item()
+        else:
+            raise RuntimeError("Unsupported type: " + str(type(v)))
+
+    def _relay_expr_to_const(self, v):
+        # type: (expr.Expr) -> object
+        if not self.executor:
+            self.executor = create_executor(ctx=tvm.cpu(), target='llvm')
+
+        v = self.executor.evaluate(v)
+        return self._tvm_nd_to_const(v)
+
 
 def make_parser(data):
     # type: (str) -> RelayParser

@@ -271,6 +271,24 @@ TVM_STATIC_IR_FUNCTOR_REGISTER(IRPrinter, vtable)
   p->stream << "TupleGetItemNode(" << node->tuple << ", " << node->index << ")";
 });
 
+Index IndexNode::make(Expr base, Array<Expr> indices) {
+  NodePtr<IndexNode> n = make_node<IndexNode>();
+  n->base = std::move(base);
+  n->indices = std::move(indices);
+  return Index(n);
+}
+
+TVM_REGISTER_NODE_TYPE(IndexNode);
+
+TVM_REGISTER_API("relay._make.Index").set_body([](TVMArgs args, TVMRetValue* ret) {
+  *ret = IndexNode::make(args[0], args[1]);
+});
+
+TVM_STATIC_IR_FUNCTOR_REGISTER(IRPrinter, vtable)
+.set_dispatch<IndexNode>([](const IndexNode* node, tvm::IRPrinter* p) {
+  p->stream << "IndexNode(" << node->base << ", " << node->indices << ")";
+});
+
 
 TVM_REGISTER_API("relay._expr.TempExprRealize")
 .set_body([](TVMArgs args, TVMRetValue* ret) {

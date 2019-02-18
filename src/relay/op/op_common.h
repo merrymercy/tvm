@@ -95,6 +95,17 @@ inline std::vector<T> AsVector(const Array<T> &array) {
     .set_attr<FInferCorrectLayout>("FInferCorrectLayout",         \
                                    BinaryBroadcastLayout)
 
+/* Helper function for writing type relation function */
+template <typename T>
+const T* ExpectType(Type type) {
+  const T* ret = type.as<T>();
+  if (ret == nullptr) {
+    CHECK(type->is_type<IncompleteTypeNode>())
+      << "Expect input type to be " << T::_type_key << " but get " << type;
+  }
+  return ret;
+}
+
 }  // namespace relay
 }  // namespace tvm
 
