@@ -28,8 +28,47 @@ def _parallel_spatial(s, op, axes, num_axes=None, axis_name="threadIdx.x"):
 
 @schedule_complex_reduce.register('gpu')
 def schedule_complex_reduce_gpu(s, cfg, node):
-    pass
+    op = node.op
+    output = node.compute_at_loc.op
 
+    n_sp = len(s[op].op.axis)
+    n_rd = len(s[op].op.reduce_axis)
+
+    # ==================== Define Configuration Space ====================
+    prefix = "#2-" + node.name
+    tile_level = 4
+    if isinstance(cfg, (ConfigSpace, FallbackConfigEntity)):
+        sp_chains = []
+        for i, axis in enumerate(s[op].op.axis):
+            ch = cfg.define_split(prefix + "_sp_tile_" + str(i), _get_axis_length(axis),
+                                  num_outputs=tile_level)
+            sp_chains.append(ch)
+
+        rd_chains = []
+        for i, axis in enumerate(s[op].op.reduce_axis):
+            ch = cfg.define_split(prefix + "_rd_tile_" + str(i), _get_axis_length(axis),
+                                  num_outputs=tile_level-2)
+            rd_chains.append(ch)
+
+
+
+    # ========================== Heuristic Fill ==========================
+
+    # =========================== Apply Config ===========================
+    input_tensor = s[op].op.input_tensors
+    tensor = s[op].output(0)
+    shared_cache = []
+
+    # add cache read and write stage
+    for buf in input_tensor:
+        shared_cache.append(s.cache_read(buf, "shared", [buf]))
+
+    if op == output:
+        local = s.cache_write(tensor, "local")
+        output = tensor
+    else:
+        local = tensor
+        output = output
 
 @schedule_simple_reduce.register('gpu')
 def schedule_simple_reduce_gpu(s, cfg, node):

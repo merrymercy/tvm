@@ -31,3 +31,4 @@ from .task import template, get_config, create, ConfigSpace, ConfigEntity, \
     ApplyGraphBest as apply_graph_best
 from .env import GLOBAL_SCOPE
 from .auto_schedule.schedule import create_schedule
+from .auto_schedule.common import AutoScheduleOptions

@@ -1,4 +1,4 @@
-"""Stage analysis"""
+"""Stage analysis: Analyze stages and access relations."""
 
 from ... import ir_pass, tensor, expr
 from ...contrib.util import reg_enum_class
@@ -9,7 +9,6 @@ from .common import _get_axis_length
 @reg_enum_class
 class StageNodeType:
     """Stage type"""
-
     'PLACEHOLDER'          # input placeholder
     'DIRECT_COMPUTE'       # direct compute
     'SIMPLE_REDUCTION'     # simple reduction without reuse opportunity
@@ -19,7 +18,6 @@ class StageNodeType:
 @reg_enum_class
 class StageEdgeType:
     """Buffer read type"""
-
     'ELEMWISE'              # element wise
     'BROADCAST'             # broadcast
     'OTHER'                 # other
@@ -29,11 +27,11 @@ class StageEdgeType:
 @reg_enum_class
 class ComputeAtType:
     """Compute at type"""
-
     'COMPUTE_ROOT'       # compute_root
     'COMPUTE_TUNE'       # compute_at with tunable knobs
     'COMPUTE_FUSE'       # compute_fuse to
     'COMPUTE_INLINE'     # compute_inline
+
 
 class StageEdge:
     """Read access relation of a buffer"""
@@ -63,6 +61,7 @@ def _node_set_in(a, b):
         if not any([x.same_as(y) for y in b]):
             return False
     return True
+
 
 def _gather_access(body):
     """Gather all accesses for an expression"""
@@ -268,25 +267,31 @@ def annotate_compute_location(node_dict, bufs):
                 else:
                     _compute_root(n)
         elif n.type == StageNodeType.DIRECT_COMPUTE:
-            if all([x.type in [StageEdgeType.ELEMWISE, StageEdgeType.BROADCAST,
-                               StageEdgeType.WEAK_INLINEABLE]
+            if all([x.type in [StageEdgeType.ELEMWISE, StageEdgeType.BROADCAST,]
+                               #StageEdgeType.WEAK_INLINEABLE]
                     for x in n.read_edges.values()]):
 
                 n.compute_at_type = ComputeAtType.COMPUTE_INLINE
 
                 for dst, edge in n.write_edges.items():
                     if edge.type == StageEdgeType.ELEMWISE and _shape_same_as(dst.shape, n.shape):
-                        n.compute_at_loc = dst.compute_at_loc
-                        break
+                        n.compute_at_loc = dst.compute_at_loc  # path compression, this is for fused op to
+                        break                                  # find the final output
             else:
-                _compute_root(n)
+                if len(n.write_edges) == 1:
+                    n.compute_at_type = ComputeAtType.COMPUTE_TUNE
+                    n.compute_at_loc = list(n.write_edges.keys())[0]
+                else:
+                    _compute_root(n)
         else:
             _compute_root(n)
 
     root_to_master = dict()
     for n in node_dict.values():
         if n.compute_at_type == ComputeAtType.COMPUTE_FUSE:
-            assert n.compute_at_loc not in root_to_master
+            assert n.compute_at_loc not in root_to_master,\
+                "Fuse multiple complex compute nodes into a single one"
+            assert n.compute_at_loc.compute_at_type == ComputeAtType.COMPUTE_ROOT
             root_to_master[n.compute_at_loc] = n
 
     return root_to_master

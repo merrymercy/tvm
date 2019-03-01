@@ -1,22 +1,29 @@
+"""Common utility for the auto-scheduler"""
+
+from ..task.space import FallbackConfigEntity
 
 class AutoScheduleOptions(object):
-    """schedule options for the auto-scheduler"""
+    """ Schedule options for the auto-scheduler, which includes
+    - hardware parameters: like number of threads, vector size
+    - tuning level: the higher, more knobs will be tuned
+    """
 
     # public accessors
-    NUM_THREADS = 16
-    TILE_SIZE = 8
-    VEC_SIZE = 8
     TUNING_LEVEL = 1  # 0 -> tune nothing, 3 -> tune all knobs. 1 is the typical value
 
-    MAX_UNROLL = 32
-    CACHE_SIZE = 8192
+    NUM_THREADS = 16   # number of threads for CPU
+    TILE_SIZE = 8      # default tile size for CPU
+    VEC_SIZE = 8       # default vector size for CPU
+    MAX_UNROLL = 32    # max unroll factor for CPU
+    CACHE_SIZE = 8192  # L1 cache size for CPU
 
-    MAX_GPU_THREADS = 1024
+    MAX_GPU_THREADS = 1024  # maximum number of threads for GPU
 
     _current = None
 
     def __init__(self, **kwargs):
         keys = [x for x in dir(AutoScheduleOptions) if not x.startswith('_')]
+        kwargs = {k.upper(): v for k, v in kwargs.items()}
 
         for k, _ in kwargs.items():
             if k not in keys:
@@ -43,10 +50,19 @@ class AutoScheduleOptions(object):
 
 AutoScheduleOptions.set_current(AutoScheduleOptions())
 
+def tuning_level(cfg):
+    """Return the current tuning level"""
+    if isinstance(cfg, FallbackConfigEntity):
+        return 0
+    else:
+        return AutoScheduleOptions.TUNING_LEVEL
 
 def _get_axis_length(axis):
     """Get the length of an axis. Returns 1 if any error occurs"""
     try:
         return axis.dom.extent.value
     except AttributeError:
-        return 1
+        try:
+            return axis.attached_length
+        except AttributeError:
+            return 1
