@@ -90,20 +90,29 @@ def _gather_vars(args):
 
 def _reduce_node_has_reuse(node):
     """check whether a reduce stage has the opportunity for memory reuse.
-      If is true, we will do tiling on it"""
-    spatial_axes = set([x.var for x in node.op.axis if _get_axis_length(x) > 1])
-    n_loss = 0
+      If is true, we will do tiling on it
+      Rule: For an iteration axis, if it disappears in one buffer read, then we
+           can get reuse opportunity by tiling on it.
+      """
+    axes = [x.var for x in node.op.axis if _get_axis_length(x) > 1]
+
+    direct_read = []
     for dst_node, edge in node.read_edges.items():
         for pattern in edge.access:
-            itervars = _gather_vars(pattern)
-            if not _node_set_in(spatial_axes, itervars):
-                n_loss += 1
+            item = []
+            for t in pattern:
+                if isinstance(t, expr.Var):  # if is direct read
+                    item.append(t)
+            direct_read.append(item)
+
+    reusable_axes = []
+    for x in axes:
+        for item in direct_read:
+            if not any([x.same_as(y) for y in item]):
+                reusable_axes.append(x)
                 break
 
-    if n_loss == len(node.read_edges):
-        return True
-    else:
-        return False
+    return reusable_axes
 
 
 def _remove_const_shift(args):

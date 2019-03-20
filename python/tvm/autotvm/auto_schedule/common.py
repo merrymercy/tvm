@@ -11,13 +11,14 @@ class AutoScheduleOptions(object):
     # public accessors
     TUNING_LEVEL = 1  # 0 -> tune nothing, 3 -> tune all knobs. 1 is the typical value
 
-    NUM_THREADS = 16   # number of threads for CPU
-    TILE_SIZE = 8      # default tile size for CPU
-    VEC_SIZE = 8       # default vector size for CPU
-    MAX_UNROLL = 32    # max unroll factor for CPU
-    CACHE_SIZE = 8192  # L1 cache size for CPU
+    NUM_THREADS = 16   # CPU: number of threads
+    TILE_SIZE = 8      # CPU: default tile size
+    VEC_SIZE = 8       # CPU: default vector size
+    MAX_UNROLL = 32    # CPU: max unroll factor
+    CACHE_SIZE = 8192  # CPU: L1 cache size
 
-    MAX_GPU_THREADS = 1024  # maximum number of threads for GPU
+    MAX_GPU_THREADS = 1024       # GPU: maximum number of threads
+    MAX_SHARED_MEMORY = 32678    # GPU: maximum amount of shared memory
 
     _current = None
 

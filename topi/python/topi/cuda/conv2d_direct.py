@@ -2,7 +2,6 @@
 """The templates for cuda conv2d operators"""
 import tvm
 from tvm import autotvm
-from ..util import get_const_tuple
 
 def schedule_direct_cuda(cfg, s, conv):
     """schedule optimized for batch size = 1"""
@@ -95,7 +94,3 @@ def schedule_direct_cuda(cfg, s, conv):
     # unroll
     s[output].pragma(kernel_scope, 'auto_unroll_max_step', cfg['auto_unroll_max_step'].val)
     s[output].pragma(kernel_scope, 'unroll_explicit', cfg['unroll_explicit'].val)
-
-    N, CO, OH, OW = get_const_tuple(output.shape)
-    _, KH, KW, CI = get_const_tuple(kernel.shape)
-    cfg.add_flop(2 * N * OH * OW * CO * CI * KH * KW)
