@@ -317,9 +317,9 @@ class Analyzer {
   Analyzer();
   /*!
    * \brief Notify all the sub-analyzers that var
-   *        is created and binded to expr.
+   *        is created and bound to expr.
    *
-   *  Each var can only be binded once.
+   *  Each var can only be bound once.
    *
    * \param var The variable.
    * \param expr The expression we bind to.
@@ -327,27 +327,36 @@ class Analyzer {
   void Bind(const VarExpr& var, const Expr& expr);
   /*!
    * \brief Notify all the sub-analyzers that var
-   *        is created and binded to a range.
+   *        is created and bound to a range.
    *
-   *  Each var can only be binded once.
+   *  Each var can only be bound once.
    *
    * \param var The variable.
    * \param range The range we bind to.
    */
   void Bind(const VarExpr& var, const Range& range);
   /*!
-   * \brief Whether can we proof expr >= val.
+   * \brief Whether can we prove expr >= lower_bound.
 
    *  Non-negative proof is very useful in integer analysis
    *  to lower divisions and mods given difference in trunc and ceil mode.
    *
    * \param expr The expression.
    * \param lower_bound The lower bound.
-   * \return Whether we can proof it.
+   * \return Whether we can prove it.
    *
    * \note Analyzer will call into sub-analyzers to get the result.
    */
   bool CanProveGreaterEqual(const Expr& expr, int64_t lower_bound);
+
+  /*!
+   * \brief Whether can we prove lower_bound <= expr <= upper_bound
+   * \param expr The expression.
+   * \param lower_bound The lower bound.
+   * \param upper_bound The upper bound.
+   * \return Whether we can prove it
+   */
+  bool CanProveInRange(const Expr& expr, int64_t lower_bound, int64_t upper_bound);
 };
 
 //-----------------------------------------------

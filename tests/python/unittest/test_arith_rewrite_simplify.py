@@ -229,6 +229,7 @@ def test_div_index_simplify():
     ck.analyzer.update(y, tvm.arith.ConstIntBound(0, 1000), override=True)
     ck.analyzer.update(z, tvm.arith.ConstIntBound(0, 1000), override=True)
 
+    ck.verify(x / 1001, 0)
     ck.verify(x / 2 / 3, x / 6)
     ck.verify((x / 2 + 1) / 3, (x + 2) / 6)
     ck.verify(x * 2 / 4, x / 2)
@@ -271,6 +272,7 @@ def test_mod_index_simplify():
     ck.analyzer.update(x, tvm.arith.ConstIntBound(0, 1000), override=True)
     ck.analyzer.update(y, tvm.arith.ConstIntBound(0, 1000), override=True)
 
+    ck.verify(x % 1001, x)
     ck.verify(x * 10 % 2, 0)
     ck.verify((x * 10 + y) % 2, y % 2)
     ck.verify((x + 10) % 2, x % 2)
