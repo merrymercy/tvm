@@ -38,7 +38,7 @@ using namespace topi::detail;
 inline Tensor expand_dims(const Tensor& x,
                           int axis,
                           int num_newaxis = 1,
-                          std::string name = "tensor",
+                          std::string name = "expand_dims",
                           std::string tag = kBroadcast) {
   int ndim = static_cast<int>(x->shape.size());
   CHECK(-ndim - 1 <= axis && axis <= ndim)
@@ -89,7 +89,7 @@ inline Tensor expand_dims(const Tensor& x,
 */
 inline Tensor transpose(const Tensor& x,
                         Array<Integer> axes,
-                        std::string name = "tensor",
+                        std::string name = "transpose",
                         std::string tag = kInjective) {
   if (!axes.defined() || axes.size() == 0) {
     axes = Array<Integer>();
@@ -145,7 +145,7 @@ inline Tensor transpose(const Tensor& x,
 */
 inline Tensor flip(const Tensor& x,
                    int axis = 0,
-                   std::string name = "tensor",
+                   std::string name = "flip",
                    std::string tag = kInjective) {
   size_t src_tensor_dim = x->shape.size();
   int axis_inp = axis;
@@ -185,7 +185,7 @@ inline Tensor flip(const Tensor& x,
 */
 inline Tensor reshape(const Tensor& x,
                       Array<Expr> newshape,
-                      std::string name = "tensor",
+                      std::string name = "reshape",
                       std::string tag = kInjective) {
   auto x_shape = x->shape;
   return compute(
@@ -210,7 +210,7 @@ inline Tensor reshape(const Tensor& x,
 inline Tensor squeeze(const Tensor& x,
                       Array<Integer> axis,
                       bool atleast1d = false,
-                      std::string name = "tensor",
+                      std::string name = "squeeze",
                       std::string tag = kInjective) {
   auto ndim = x->shape.size();
   std::vector<int> axis_val;
@@ -272,7 +272,7 @@ inline Tensor squeeze(const Tensor& x,
 */
 inline Tensor concatenate(const Array<Tensor>& inputs,
                           int axis = 0,
-                          std::string name = "tensor",
+                          std::string name = "concat",
                           std::string tag = kInjective) {
   int ndim = static_cast<int>(inputs[0]->shape.size());
   CHECK(-ndim <= axis && axis < ndim)
@@ -336,7 +336,7 @@ inline Tensor concatenate(const Array<Tensor>& inputs,
 */
 inline Tensor stack(const Array<Tensor>& inputs,
                     int axis = 0,
-                    std::string name = "tensor",
+                    std::string name = "stack",
                     std::string tag = kInjective) {
   int ndim = static_cast<int>(inputs[0]->shape.size());
   CHECK(-ndim - 1 <= axis && axis <= ndim)
@@ -389,7 +389,7 @@ inline Tensor stack(const Array<Tensor>& inputs,
 inline Array<Tensor> split(const Tensor& x,
                            Array<Integer> split_indices,
                            int axis,
-                           std::string name = "tensor",
+                           std::string name = "split",
                            std::string tag = kInjective) {
   if (axis < 0) {
     axis += static_cast<int>(x->shape.size());
@@ -467,7 +467,7 @@ inline Tensor strided_slice(const Tensor& x,
                             const Array<Integer>& begin,
                             const Array<Integer>& end,
                             const Array<Integer>& strides,
-                            std::string name = "tensor",
+                            std::string name = "st_slice",
                             std::string tag = kInjective) {
   size_t src_tensor_dim = static_cast<size_t>(x->shape.size());
   // Setup the ranges.
@@ -566,7 +566,7 @@ inline Tensor strided_slice(const Tensor& x,
 inline Array<Tensor> split_sections(const Tensor& x,
                                     int num_sections,
                                     int axis,
-                                    std::string name = "tensor",
+                                    std::string name = "split",
                                     std::string tag = kInjective) {
   if (axis < 0) {
     axis += static_cast<int>(x->shape.size());
@@ -604,7 +604,7 @@ inline Array<Tensor> split_sections(const Tensor& x,
 */
 inline Tensor take(const Tensor& a,
                    const Tensor& indices,
-                   std::string name = "tensor",
+                   std::string name = "take",
                    std::string tag = kInjective) {
   Array<Expr> a_shape = a->shape;
   Array<Expr> out_shape;
@@ -637,7 +637,7 @@ inline Tensor take(const Tensor& a,
 inline Tensor take(const Tensor& a,
                    const Tensor& indices,
                    int axis,
-                   std::string name = "tensor",
+                   std::string name = "take",
                    std::string tag = kInjective) {
   if (axis < 0) {
     axis += static_cast<int>(a->shape.size());
@@ -687,7 +687,7 @@ inline Tensor take(const Tensor& a,
 inline Tensor where(const Tensor& condition,
                     const Tensor& x,
                     const Tensor& y,
-                    std::string name = "tensor",
+                    std::string name = "where",
                     std::string tag = kInjective) {
   CHECK_EQ(x->shape.size(), y->shape.size())
     << "x and y must have the same shape.Got different number of dimension: "
@@ -735,7 +735,7 @@ inline Tensor where(const Tensor& condition,
 inline Tensor repeat(const Tensor& x,
                      int repeats,
                      int axis,
-                     std::string name = "tensor",
+                     std::string name = "repeat",
                      std::string tag = kBroadcast) {
   int ndim = static_cast<int>(x->shape.size());
   CHECK(-ndim - 1 <= axis && axis <= ndim)
@@ -784,7 +784,7 @@ inline Tensor repeat(const Tensor& x,
 */
 inline Tensor tile(const Tensor& x,
                    Array<Integer> reps,
-                   std::string name = "tensor",
+                   std::string name = "tile",
                    std::string tag = kBroadcast) {
   size_t ndim = x->shape.size();
   size_t rdim = reps.size();
@@ -841,7 +841,7 @@ inline Tensor tile(const Tensor& x,
 */
 inline Tensor gather_nd(const Tensor& data,
                         const Tensor& indices,
-                        std::string name = "tensor",
+                        std::string name = "gather_nd",
                         std::string tag = kInjective) {
   size_t ndim_d = data->shape.size();
   size_t ndim_i = indices->shape.size();
@@ -902,7 +902,7 @@ inline tvm::Tensor matmul(const tvm::Tensor& A,
                            const tvm::Tensor& B,
                            bool trans_a = false,
                            bool trans_b = false,
-                           std::string name = "tensor",
+                           std::string name = "matmul",
                            std::string tag = kMatMul) {
   tvm::Array<tvm::Expr> output_shape{A->shape[trans_a ? 1 : 0],
                                      B->shape[trans_b ? 0 : 1]};
@@ -928,7 +928,7 @@ inline tvm::Tensor matmul(const tvm::Tensor& A,
 inline Tensor tensordot(const Tensor& A,
                         const tvm::Tensor& B,
                         int axes = 2,
-                        std::string name = "tensor",
+                        std::string name = "tensordot",
                         std::string tag = kMatMul) {
   CHECK_GE(A->shape.size(), axes);
   CHECK_GE(B->shape.size(), axes);
@@ -984,7 +984,7 @@ inline Tensor tensordot(const Tensor& A,
                         const tvm::Tensor& B,
                         Array<Expr> A_axes,
                         Array<Expr> B_axes,
-                        std::string name = "tensor",
+                        std::string name = "tensordot",
                         std::string tag = kMatMul) {
   CHECK_EQ(A_axes.size(), B_axes.size());
 
@@ -1033,7 +1033,7 @@ inline Tensor arange(const Expr start,
                      const Expr stop,
                      const Expr step,
                      Type dtype,
-                     std::string name = "tensor",
+                     std::string name = "arange",
                      std::string tag = kInjective) {
   Expr num_elem = tvm::cast(tvm::Int(32), tvm::ceil(
       tvm::cast(tvm::Float(32), stop - start) / step));
