@@ -179,8 +179,8 @@ def get_lower_ir(s):
     return lower(s, inputs, simple_mode=True)
 
 def reg_enum_class(cls):
-    """Register a class as an enumerate class
-    support
+    """Register a class as an enumerate class.
+    This supports string print and doesn't need users to number the values explicitly
 
     Params
     ------
@@ -193,7 +193,7 @@ def reg_enum_class(cls):
     >>> class AnimalType(object):
     >>>     'DOG'       # dot
     >>>     'CAT'       # cat
-    >>>     'ELEPHANT'  # elephant
+    >>>     'ELEPHANT'  # some comments
     >>>
     >>> # Then you can use
     >>> AnimalType.DOG                    # 0

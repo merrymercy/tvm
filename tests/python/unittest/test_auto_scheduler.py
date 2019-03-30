@@ -5,16 +5,18 @@ import re
 
 import numpy as np
 
-import topi
 import tvm
+import topi
 from tvm import autotvm
 from tvm.autotvm.auto_schedule.common import AutoScheduleOptions as opts
+from tvm.contrib.util import get_lower_ir
 from topi.util import get_const_tuple
 
 
 def _test_speed(bufs, target):
+    """Utility for testing speed"""
     with target:
-        s = autotvm.create_schedule(bufs)
+        s, bufs = autotvm.create_schedule(bufs)
         #s = tvm.create_schedule([bufs[-1].op])
         func = tvm.build(s, bufs)
 
@@ -24,7 +26,7 @@ def _test_speed(bufs, target):
         args.append(tvm.nd.array(np.random.randn(*get_const_tuple(x.shape)).astype(x.dtype),
                                  ctx=ctx))
 
-    timer = func.time_evaluator(func.entry_name, ctx, min_repeat_ms=1000)
+    timer = func.time_evaluator(func.entry_name, ctx, min_repeat_ms=1500)
     return timer(*args).mean
 
 
@@ -33,19 +35,19 @@ def test_parallel_vec():
     A = tvm.placeholder((16, 16), name='A')
     B = tvm.compute((16, 16), lambda i, j: A[i][j] + 1, name='B')
 
-    ## CPU
+    ### CPU
     with tvm.target.create('llvm'):
-        s = autotvm.create_schedule([A, B])
-        stmt = tvm.lower(s, [A, B], simple_mode=True)
+        s, bufs = autotvm.create_schedule([A, B])
+        stmt = tvm.lower(s, bufs, simple_mode=True)
 
     assert isinstance(stmt.body.body.body.index, tvm.expr.Ramp)  # vec
     assert stmt.body.for_type == 1                               # parallel
     assert "if " not in str(stmt)
 
-    ## GPU
+    ### GPU
     with tvm.target.create('cuda'):
-        s = autotvm.create_schedule([A, B])
-        stmt = tvm.lower(s, [A, B], simple_mode=True)
+        s, bufs = autotvm.create_schedule([A, B])
+        stmt = tvm.lower(s, bufs, simple_mode=True)
 
     assert stmt.body.node.var.name == "blockIdx.x"
     assert stmt.body.attr_key == "thread_extent"
@@ -60,17 +62,17 @@ def test_inline():
     B = tvm.compute((16,), lambda i: A[i], name='B_Buffer')
     C = tvm.compute((16,), lambda j: B[j], name='C')
 
-    ## CPU
+    ### CPU
     with tvm.target.create('llvm'):
-        s = autotvm.create_schedule([A, C])
-        stmt = tvm.lower(s, [A, C], simple_mode=True)
+        s, bufs = autotvm.create_schedule([A, C])
+        stmt = tvm.lower(s, bufs, simple_mode=True)
 
     assert 'B_Buffer' not in str(stmt)
 
-    ## GPU
+    ### GPU
     with tvm.target.create('cuda'):
-        s = autotvm.create_schedule([A, C])
-        stmt = tvm.lower(s, [A, C], simple_mode=True)
+        s, bufs = autotvm.create_schedule([A, C])
+        stmt = tvm.lower(s, bufs, simple_mode=True)
 
     assert 'B_Buffer' not in str(stmt)
 
@@ -85,9 +87,9 @@ def test_tune_simple_compute():
         C = tvm.compute((16, 16), lambda i, j: (B[i][j] + B[i+1][j] + B[i+2][j])/3, name='C')
 
         with autotvm.AutoScheduleOptions(tuning_level=3):
-            s = autotvm.create_schedule([A, C])
+            s, bufs = autotvm.create_schedule([A, C])
 
-        return s, [A, C]
+        return s, bufs
 
     logging.getLogger('autotvm').setLevel(logging.DEBUG)
     logging.getLogger('autotvm').addHandler(logging.StreamHandler(sys.stdout))
@@ -114,7 +116,7 @@ def test_tune_simple_compute():
 
     tsk = autotvm.task.create(blur, args=(), target='llvm')
     tuner = autotvm.tuner.RandomTuner(tsk)
-    tuner.tune(n_trial=8,
+    tuner.tune(n_trial=10,
                measure_option=measure_option,
                callbacks=[check_call_back])
     assert flags[0] and flags[1]
@@ -148,20 +150,20 @@ def test_norm():
                                             axis=[r1, r2, r3]), name='C')
     B = topi.sqrt(B)
 
-    ## CPU
+    ### CPU
     with tvm.target.create('llvm'):
-        s = autotvm.create_schedule([A, B])
-        stmt = tvm.lower(s, [A, B], simple_mode=True)
+        s, bufs = autotvm.create_schedule([A, B])
+        stmt = tvm.lower(s, bufs, simple_mode=True)
 
     stmt = str(stmt)
     assert "parallel" in stmt
     assert "ramp" in stmt
     assert len(re.findall("\nproduce", stmt)) == 1  # test fuse
 
-    ## GPU
+    ### GPU
     with tvm.target.create('cuda'):
-        s = autotvm.create_schedule([A, B])
-        stmt = tvm.lower(s, [A, B], simple_mode=True)
+        s, bufs = autotvm.create_schedule([A, B])
+        stmt = tvm.lower(s, bufs, simple_mode=True)
 
     stmt = str(stmt)
     assert len(re.findall("\nproduce", stmt)) == 0  # test fuse
@@ -206,33 +208,33 @@ def test_more_reduction():
         ele_max()
     ]
 
-    ## CPU
+    ### CPU
     for buffers in test_cast_list:
         with tvm.target.create('llvm'):
-            s = autotvm.create_schedule(buffers)
+            s, bufs = autotvm.create_schedule(buffers)
             stmt = tvm.lower(s, buffers, simple_mode=True)
             stmt = str(stmt)
             assert "parallel" in stmt or "ramp" in stmt
             assert "if " not in stmt, stmt
 
-    ## GPU
+    ### GPU
     with tvm.target.create('cuda'):
         for buffers in [pool()]:
-            s = autotvm.create_schedule(buffers)
-            stmt = tvm.lower(s, buffers, simple_mode=True)
+            s, bufs = autotvm.create_schedule(buffers)
+            stmt = tvm.lower(s, bufs, simple_mode=True)
             stmt = str(stmt)
             assert "allreduce" not in stmt
 
         for buffers in [global_pool(), softmax()]:
-            s = autotvm.create_schedule(buffers)
-            stmt = tvm.lower(s, buffers, simple_mode=True)
+            s, bufs = autotvm.create_schedule(buffers)
+            stmt = tvm.lower(s, bufs, simple_mode=True)
             stmt = str(stmt)
             assert "allreduce" not in stmt
             assert "if " not in stmt
 
         for buffers in [argmin()]:
-            s = autotvm.create_schedule(buffers)
-            stmt = tvm.lower(s, buffers, simple_mode=True)
+            s, bufs = autotvm.create_schedule(buffers)
+            stmt = tvm.lower(s, bufs, simple_mode=True)
             stmt = str(stmt)
             assert "allreduce" in stmt
 
@@ -244,19 +246,19 @@ def test_matmul():
     k = tvm.reduce_axis((0, 128), 'k')
     C = tvm.compute((128, 128), lambda i, j: tvm.sum(A[i, k] * B[k, j], k), name='C')
 
-    ## CPU
+    ### CPU
     with tvm.target.create('llvm'):
-        s = autotvm.create_schedule([A, B, C])
-        stmt = tvm.lower(s, [A, B, C], simple_mode=True)
+        s, bufs = autotvm.create_schedule([A, B, C])
+        stmt = tvm.lower(s, bufs, simple_mode=True)
 
     stmt = str(stmt)
     assert "parallel" in stmt
     assert "ramp" in stmt
 
-    ## GPU
+    ### GPU
     with tvm.target.create('cuda'):
-        s = autotvm.create_schedule([A, B, C])
-        stmt = tvm.lower(s, [A, B, C], simple_mode=True)
+        s, bufs = autotvm.create_schedule([A, B, C])
+        stmt = tvm.lower(s, bufs, simple_mode=True)
 
     stmt = str(stmt)
     assert "if " not in stmt
@@ -271,45 +273,47 @@ def test_dense_fuse():
     O = topi.nn.dense(A, W)
     O = topi.nn.relu(O)
 
+    ### CPU
     with tvm.target.create('llvm'):
-        s = autotvm.create_schedule([A, W, O])
-        stmt = tvm.lower(s, [A, W, O], simple_mode=True)
+        s, bufs = autotvm.create_schedule([A, W, O])
+        stmt = tvm.lower(s, bufs, simple_mode=True)
 
     stmt = str(stmt)
     assert "parallel" in stmt
     assert "ramp" in stmt
 
+    ### GPU
     with tvm.target.create('cuda'):
-        s = autotvm.create_schedule([A, W, O])
-        stmt = tvm.lower(s, [A, W, O], simple_mode=True)
+        s, bufs = autotvm.create_schedule([A, W, O])
+        stmt = tvm.lower(s, bufs, simple_mode=True)
 
     stmt = str(stmt)
     assert "shared" in stmt
 
 def test_conv_nchw():
     """Test conv with padding"""
-    A = tvm.placeholder((4, 64, 56, 56), name='A')
-    W = tvm.placeholder((128, 64, 3, 3), name='W')
+    A = tvm.placeholder((8, 128, 56, 56), name='A')
+    W = tvm.placeholder((128, 128, 3, 3), name='W')
     bias = tvm.placeholder((128,), name='bias')
 
     O = topi.nn.conv2d(A, W, (1, 1), (1, 1),
                        (1, 1), layout='NCHW', out_dtype='float32')
     O = topi.add(O, topi.expand_dims(bias, axis=1, num_newaxis=2))
 
-    ## CPU
+    ### CPU
     with tvm.target.create('llvm'):
-        s = autotvm.create_schedule([A, W, bias, O])
-        stmt = tvm.lower(s, [A, W, bias, O], simple_mode=True)
+        s, bufs = autotvm.create_schedule([A, W, bias, O])
+        stmt = tvm.lower(s, bufs, simple_mode=True)
 
     stmt = str(stmt)
     assert len(re.findall("parallel", stmt)) == 2   # test parallel
     assert "ramp" in stmt                           # test vectorization
     assert len(re.findall("\nproduce", stmt)) == 2  # test fuse
 
-    ## GPU
+    ### GPU
     with tvm.target.create('cuda'):
-        s = autotvm.create_schedule([A, W, bias, O])
-        stmt = tvm.lower(s, [A, W, bias, O], simple_mode=True)
+        s, bufs = autotvm.create_schedule([A, W, bias, O])
+        stmt = tvm.lower(s, bufs, simple_mode=True)
 
     shared_mem = 0
     for item in re.findall("allocate .*\.shared\[float32 \* (\d*)\]", str(stmt)):
@@ -344,20 +348,20 @@ def test_conv3d():
                     B[co, ci, kd, kh, kw], axis=[ci, kd, kh, kw]), name='C')
     C = topi.add(C, topi.expand_dims(bias, axis=1, num_newaxis=3))
 
-    ## CPU
+    ### CPU
     with tvm.target.create('llvm'):
-        s = autotvm.create_schedule([A, B, bias, C])
-        stmt = tvm.lower(s, [A, B, bias, C], simple_mode=True)
+        s, bufs = autotvm.create_schedule([A, B, bias, C])
+        stmt = tvm.lower(s, bufs, simple_mode=True)
 
     stmt = str(stmt)
     assert "parallel" in stmt                       # test parallel
     assert "ramp" in stmt                           # test vectorization
     assert len(re.findall("^produce", stmt)) == 1   # test fuse
 
-    ## GPU
+    ### GPU
     with tvm.target.create('cuda'):
-        s = autotvm.create_schedule([A, B, bias, C])
-        stmt = tvm.lower(s, [A, B, bias, C], simple_mode=True)
+        s, bufs = autotvm.create_schedule([A, B, bias, C])
+        stmt = tvm.lower(s, bufs, simple_mode=True)
 
     shared_mem = 0
     for item in re.findall("allocate .*\.shared\[float32 \* (\d*)\]", str(stmt)):
@@ -374,26 +378,57 @@ def test_depthwise_conv2d():
                                       (1, 1), out_dtype='float32')
     O = topi.add(O, topi.expand_dims(bias, axis=1, num_newaxis=2))
 
-    ## CPU
+    ### CPU
     with tvm.target.create('llvm'):
-        s = autotvm.create_schedule([A, W, bias, O])
-        stmt = tvm.lower(s, [A, W, bias, O], simple_mode=True)
+        s, bufs = autotvm.create_schedule([A, W, bias, O])
+        stmt = tvm.lower(s, bufs, simple_mode=True)
 
     stmt = str(stmt)
     assert len(re.findall("parallel", stmt)) == 2   # test parallel
     assert len(re.findall("\nproduce", stmt)) == 2  # test fuse
 
-    ## GPU
+    ### GPU
     with tvm.target.create('cuda'):
-        s = autotvm.create_schedule([A, W, bias, O])
-        stmt = tvm.lower(s, [A, W, bias, O], simple_mode=True)
+        s, bufs = autotvm.create_schedule([A, W, bias, O])
+        stmt = tvm.lower(s, bufs, simple_mode=True)
 
     stmt = str(stmt)
     assert "shared" in stmt
 
 def test_pack():
     """Test auto-packing"""
-    pass
+    A = tvm.placeholder((1024, 1024), name='A')
+    B = tvm.placeholder((1024, 1024), name='B')
+    k = tvm.reduce_axis((0, 1024), 'k')
+    C = tvm.compute((1024, 1024), lambda i, j: tvm.sum(A[i, k] * B[j, k], k), name='C')
+    D = tvm.compute((1024, 1024), lambda i, j: C[i, j] + 1, name='D')
+
+    ### CPU
+    with tvm.target.create('llvm'):
+        with autotvm.AutoScheduleOptions(auto_pack=True):
+            s, bufs = autotvm.create_schedule([A, B, D])
+            stmt = tvm.lower(s, bufs, simple_mode=True)
+
+    # test pack unpack
+    stmt = str(stmt)
+    assert "C_pack" in stmt
+    assert "D_unpack" in stmt
+
+    # test vectorization
+    for item in re.findall('\[ramp\(.*, (\d*), (\d*)\)\]', stmt):
+        assert item[0] == '1'
+        assert item[1] == str(opts.VEC_SIZE)
+
+    ### GPU
+    with tvm.target.create('cuda'):
+        with autotvm.AutoScheduleOptions(auto_pack=True):
+            s, bufs = autotvm.create_schedule([A, B, D])
+            stmt = tvm.lower(s, bufs, simple_mode=True)
+
+    stmt = str(stmt)
+    # don't pack for gpu
+    assert "pack" not in stmt
+
 
 if __name__ == "__main__":
     test_parallel_vec()

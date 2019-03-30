@@ -1,17 +1,20 @@
+"""Schedule template for GPU"""
+
 import numpy as np
 
-from .... import target as _target, tensor as _tensor, thread_axis, arith, \
-    expr as _expr, ir_pass
-from ...task.space import get_factors, ConfigEntity, ConfigSpace, FallbackConfigEntity
-from ..common import AutoScheduleOptions as opts, _get_axis_length, tuning_level
-from .generic import schedule_simple_reduce, schedule_complex_reduce, schedule_other_root, schedule_tune_direct_compute
+from .... import target as _target, tensor as _tensor, expr as _expr, \
+    ir_pass as _ir_pass, arith as _arith, thread_axis
+from ...task.space import get_factors, ConfigSpace, FallbackConfigEntity
+from ..common import AutoScheduleOptions as opts, get_axis_length, tuning_level
+from .generic import schedule_simple_reduce, schedule_complex_reduce, \
+    schedule_other_root, schedule_tune_direct_compute
 
 def _parallel_spatial(s, op, axes, num_axes=None, axis_name="threadIdx.x"):
-    """parallel and bind spatial axes"""
+    """Parallel and bind spatial axes"""
     num_axes = num_axes or opts.MAX_GPU_THREADS
-    prod = np.prod([_get_axis_length(x) for x in s[op].op.axis])
+    prod = np.prod([get_axis_length(x) for x in s[op].op.axis])
 
-    # set range
+    # set upper bound of the number of axes
     while num_axes > 16 and num_axes * 4 > prod:
         num_axes //= 2
 
@@ -27,6 +30,7 @@ def _parallel_spatial(s, op, axes, num_axes=None, axis_name="threadIdx.x"):
     return tx
 
 def _get_byte_size(dtype):
+    """Get the number of bytes of a dtype"""
     table = {
         "float64": 8, "float32": 4, "float16": 2,
         "int64": 8, "int32": 4, "int16": 2, "int8": 1,
@@ -37,12 +41,12 @@ def _estimate_memory(op, axis_lens):
     """Estimate touched memory of an ComputeOp"""
     assert isinstance(op, _tensor.ComputeOp), "Only support compute op"
 
-    analyzer = arith.Analyzer()
+    analyzer = _arith.Analyzer()
     for i, axis in enumerate(op.axis):
-        analyzer.update(axis.var, arith.ConstIntBound(0, axis_lens[i]))
+        analyzer.update(axis.var, _arith.ConstIntBound(0, axis_lens[i]))
     base = len(op.axis)
     for i, axis in enumerate(op.reduce_axis):
-        analyzer.update(axis.var, arith.ConstIntBound(0, axis_lens[i + base]))
+        analyzer.update(axis.var, _arith.ConstIntBound(0, axis_lens[i + base]))
 
     read_list = []
 
@@ -54,19 +58,152 @@ def _estimate_memory(op, axis_lens):
                 tmp *= bound.max_value - bound.min_value
             read_list.append(tmp * _get_byte_size(stmt.dtype))
 
-    ir_pass.PostOrderVisit(op.body[0].source[0], _check)
+    _ir_pass.PostOrderVisit(op.body[0].source[0], _check)
     return sum(read_list)
+
+
+@schedule_other_root.register('gpu')
+def schedule_other_root_gpu(s, cfg, node):
+    """Schedule other compute type (e.g. elemwise, broadcast)
+
+    Parameters
+    ----------
+    s: Schedule
+        The schedule
+    cfg: ConfigSpace
+        The current configuration for autotvm template
+    node: StageNode
+        The node(op) to schedule
+    """
+    op = node.op
+
+    # todo(lmzheng): consider reordering?
+    _parallel_spatial(s, op, s[op].op.axis)
+
+
+@schedule_tune_direct_compute.register('gpu')
+def schedule_tune_direct_compute(s, cfg, node):
+    """Schedule tunable direct compute op (e.g. elemwise with tunable location)
+
+    Parameters
+    ----------
+    s: Schedule
+        The schedule
+    cfg: ConfigSpace
+        The current configuration for autotvm template
+    node: StageNode
+        The node(op) to schedule
+    """
+    op = node.op
+
+    # ==================== Define Configuration Space ====================
+    if isinstance(cfg, (ConfigSpace, FallbackConfigEntity)):
+        cfg.define_knob("#2-" + node.name + '_compute_loc', [0, 1])
+
+    # ========================== Heuristic Fill ==========================
+    if tuning_level(cfg) < 2:
+        cfg["#2-" + node.name + '_compute_loc'].val = 0
+
+    # =========================== Apply Config ===========================
+    val = cfg["#2-" + node.name + '_compute_loc'].val
+    if val == 0:
+        s[op].compute_inline()
+    elif val == 1:
+        _parallel_spatial(s, op, s[op].op.axis)
+
+
+@schedule_simple_reduce.register('gpu')
+def schedule_simple_reduce_gpu(s, cfg, node):
+    """Schedule simple reduction op (e.g. softmax, min, max)
+
+    Parameters
+    ----------
+    s: Schedule
+        The schedule
+    cfg: ConfigSpace
+        The current configuration for autotvm template
+    node: StageNode
+        The node(op) to schedule
+    """
+    op = node.op
+    output = node.compute_at_loc.op
+
+    # ==================== Define Configuration Space ====================
+    prefix = "#2-" + node.name
+    if isinstance(cfg, (ConfigSpace, FallbackConfigEntity)):
+        # parallel on spatial axis or reduction axis
+        cfg.define_knob(prefix + '_parallel_loc', ['spatial', 'reduction'])
+        cfg.define_knob(prefix + '_parallel_num', [32, 64, 128, 256, 512])
+
+    # ========================== Heuristic Fill ==========================
+    if isinstance(cfg, FallbackConfigEntity) or opts.TUNING_LEVEL <= 2:
+        spatial_prod = np.prod([get_axis_length(x) for x in s[op].op.axis])
+        reduction_prod = np.prod([get_axis_length(x) for x in s[op].op.reduce_axis])
+
+        if spatial_prod >= get_axis_length(s[op].op.reduce_axis[0]) \
+                or reduction_prod < opts.NUM_THREADS * 4:
+            cfg[prefix + '_parallel_loc'].val = 'spatial'
+        else:
+            cfg[prefix + '_parallel_loc'].val = 'reduction'
+
+        if spatial_prod == 1:
+            cfg[prefix + "_parallel_num"].val = _target.current_target().max_num_threads
+        else:
+            cfg[prefix + "_parallel_num"].val = 32
+
+    # =========================== Apply Config ===========================
+    def _parallel_reduction(T, output, num_tx):
+        fused_reduce = s[T].fuse(*s[T].op.reduce_axis)
+        ko, ki = s[T].split(fused_reduce, factor=num_tx)
+        TF = s.rfactor(T, ki)
+        TF = TF[0] if not isinstance(TF, _tensor.Tensor) else TF
+
+        tx = s[T].op.reduce_axis[0]
+        thread_x = thread_axis('threadIdx.x')
+        s[T].bind(tx, thread_axis('threadIdx.x'))
+        s[TF].compute_at(s[T], tx)
+
+        s[output].set_store_predicate(thread_x.equal(0))
+        if len(s[T].op.axis) != 0:
+            num_tx = _target.current_target().max_num_threads // cfg[prefix + '_parallel_num'].val
+            return _parallel_spatial(s, output, s[output].op.axis, num_tx, "threadIdx.y")
+        else:
+            if s[output].op.axis:
+                return s[output].op.axis[-1]
+            else:
+                return None
+
+    tensor = op.output(0)
+
+    if cfg[prefix + '_parallel_loc'].val == 'spatial':
+        last = _parallel_spatial(s, output, s[output].op.axis)
+    else:
+        last = _parallel_reduction(tensor, output, cfg[prefix + '_parallel_num'].val)
+
+    if op != output and last is not None:
+        s[op].compute_at(s[output], last)
 
 
 @schedule_complex_reduce.register('gpu')
 def schedule_complex_reduce_gpu(s, cfg, node):
+    """Schedule simple reduction op (e.g. softmax, min, max)
+
+    Parameters
+    ----------
+    s: Schedule
+        The schedule
+    cfg: ConfigSpace
+        The current configuration for autotvm template
+    node: StageNode
+        The node(op) to schedule
+    """
     op = node.op
     output = node.compute_at_loc.op.output(0)
 
     n_sp = len(s[op].op.axis)
     n_rd = len(s[op].op.reduce_axis)
-    lens = [_get_axis_length(x) for x in s[op].op.axis] + \
-           [_get_axis_length(x) for x in s[op].op.reduce_axis]
+    lens = [get_axis_length(x) for x in s[op].op.axis] + \
+           [get_axis_length(x) for x in s[op].op.reduce_axis]
     n_axis = n_sp + n_rd
 
     # ==================== Define Configuration Space ====================
@@ -74,11 +211,11 @@ def schedule_complex_reduce_gpu(s, cfg, node):
     tile_level = 4
     if isinstance(cfg, (ConfigSpace, FallbackConfigEntity)):
         for i, axis in enumerate(s[op].op.axis):
-            cfg.define_split(prefix + "_sp_tile_%d" % i, _get_axis_length(axis),
+            cfg.define_split(prefix + "_sp_tile_%d" % i, get_axis_length(axis),
                              num_outputs=tile_level)
 
         for i, axis in enumerate(s[op].op.reduce_axis):
-            cfg.define_split(prefix + "_rd_tile_%d" % i, _get_axis_length(axis),
+            cfg.define_split(prefix + "_rd_tile_%d" % i, get_axis_length(axis),
                              num_outputs=tile_level-2)
 
         cfg.define_knob(prefix + 'unroll_explicit', [0, 1])
@@ -86,9 +223,9 @@ def schedule_complex_reduce_gpu(s, cfg, node):
 
     # ========================== Heuristic Fill ==========================
     if tuning_level(cfg) < 1:
-        # greedily increase tile size for each dimension, in round robin order.
-
-        # 1. Allocate shared memory (determine block size)
+        # 1. Determine block size: use as much shared memory as possible
+        # Assume tiling on every dimension can increase the locality or benefit load,
+        # we greedily increase tile size for each dimension, in round robin order.
         block_size = [1] * n_axis
         factors = [get_factors(x) for x in lens]
 
@@ -116,6 +253,7 @@ def schedule_complex_reduce_gpu(s, cfg, node):
                 break
 
         # 2. Allocate thread binding
+        # Inside a block, utilize as many threads as possible
         thread_size = [1] * n_sp
         factors = [get_factors(block_size[i]) for i in range(n_sp)]
 
@@ -141,7 +279,7 @@ def schedule_complex_reduce_gpu(s, cfg, node):
                 find = True
                 break
 
-        # 3. Compute length of the last slot
+        # 3. Fill the values in cfg
         for i in range(n_sp):
             cfg[prefix + '_sp_tile_%d' % i].size = [lens[i] // block_size[i], 1, thread_size[i],
                                                     block_size[i] / thread_size[i]]
@@ -149,6 +287,8 @@ def schedule_complex_reduce_gpu(s, cfg, node):
         for i in range(n_rd):
             cfg[prefix + '_rd_tile_%d' % i].size = [lens[i + n_sp] // block_size[i + n_sp],
                                                     block_size[i + n_sp]]
+
+            # Todo(lmzheng): consider bank conflict?
 
     # =========================== Apply Config ===========================
     input_tensor = s[op].op.input_tensors
@@ -199,7 +339,7 @@ def schedule_complex_reduce_gpu(s, cfg, node):
         s[output].bind(ty, thread_axis('threadIdx.y'))
         s[output].bind(tx, thread_axis('threadIdx.x'))
 
-        # cooperative fetching  (todo: smarter binding or better arith simplification)
+        # cooperative fetching  (todo: smarter binding or better _arith simplification)
         for load in shared_cache:
             fused = s[load].fuse(*s[load].op.axis)
             len_z = round(np.prod([cfg[prefix + '_sp_tile_%d' % i].size[2]
@@ -248,91 +388,3 @@ def schedule_complex_reduce_gpu(s, cfg, node):
     # unroll
     s[output].pragma(kernel_scope, 'auto_unroll_max_step', cfg[prefix + 'auto_unroll_max_step'].val)
     s[output].pragma(kernel_scope, 'unroll_explicit', cfg[prefix + 'unroll_explicit'].val)
-
-
-@schedule_simple_reduce.register('gpu')
-def schedule_simple_reduce_gpu(s, cfg, node):
-    op = node.op
-    output = node.compute_at_loc.op
-
-    # ==================== Define Configuration Space ====================
-    prefix = "#2-" + node.name
-    if isinstance(cfg, (ConfigSpace, FallbackConfigEntity)):
-        # parallel on spatial axis or reduction axis
-        cfg.define_knob(prefix + '_parallel_loc', ['spatial', 'reduction'])
-        cfg.define_knob(prefix + '_parallel_num', [32, 64, 128, 256, 512])
-
-    # ========================== Heuristic Fill ==========================
-    if isinstance(cfg, FallbackConfigEntity) or opts.TUNING_LEVEL <= 2:
-        spatial_prod = np.prod([_get_axis_length(x) for x in s[op].op.axis])
-        reduction_prod = np.prod([_get_axis_length(x) for x in s[op].op.reduce_axis])
-
-        if spatial_prod >= _get_axis_length(s[op].op.reduce_axis[0]) \
-                or reduction_prod < opts.NUM_THREADS * 4:
-            cfg[prefix + '_parallel_loc'].val = 'spatial'
-        else:
-            cfg[prefix + '_parallel_loc'].val = 'reduction'
-
-        if spatial_prod == 1:
-            cfg[prefix + "_parallel_num"].val = _target.current_target().max_num_threads
-        else:
-            cfg[prefix + "_parallel_num"].val = 32
-
-    # =========================== Apply Config ===========================
-    def _parallel_reduction(T, output, num_tx):
-        fused_reduce = s[T].fuse(*s[T].op.reduce_axis)
-        ko, ki = s[T].split(fused_reduce, factor=num_tx)
-        TF = s.rfactor(T, ki)
-        TF = TF[0] if not isinstance(TF, _tensor.Tensor) else TF
-
-        tx = s[T].op.reduce_axis[0]
-        thread_x = thread_axis('threadIdx.x')
-        s[T].bind(tx, thread_axis('threadIdx.x'))
-        s[TF].compute_at(s[T], tx)
-
-        s[output].set_store_predicate(thread_x.equal(0))
-        if len(s[T].op.axis) != 0:
-            num_tx = _target.current_target().max_num_threads // cfg[prefix + '_parallel_num'].val
-            return _parallel_spatial(s, output, s[output].op.axis, num_tx, "threadIdx.y")
-        else:
-            if s[output].op.axis:
-                return s[output].op.axis[-1]
-            else:
-                return None
-
-    tensor = op.output(0)
-
-    if cfg[prefix + '_parallel_loc'].val == 'spatial':
-        last = _parallel_spatial(s, output, s[output].op.axis)
-    else:
-        last = _parallel_reduction(tensor, output, cfg[prefix + '_parallel_num'].val)
-
-    if op != output and last is not None:
-        s[op].compute_at(s[output], last)
-
-
-@schedule_other_root.register('gpu')
-def schedule_other_root_gpu(s, cfg, node):
-    op = node.op
-
-    # todo(lmzheng): reordering?
-    _parallel_spatial(s, op, s[op].op.axis)
-
-@schedule_tune_direct_compute.register('gpu')
-def schedule_tune_direct_compute(s, cfg, node):
-    op = node.op
-
-    # ==================== Define Configuration Space ====================
-    if isinstance(cfg, (ConfigSpace, FallbackConfigEntity)):
-        cfg.define_knob("#2-" + node.name + '_compute_loc', [0, 1])
-
-    # ========================== Heuristic Fill ==========================
-    if tuning_level(cfg) < 2:
-        cfg["#2-" + node.name + '_compute_loc'].val = 0
-
-    # =========================== Apply Config ===========================
-    val = cfg["#2-" + node.name + '_compute_loc'].val
-    if val == 0:
-        s[op].compute_inline()
-    elif val == 1:
-        _parallel_spatial(s, op, s[op].op.axis)

@@ -4,21 +4,27 @@ from ..task.space import FallbackConfigEntity
 
 class AutoScheduleOptions(object):
     """ Schedule options for the auto-scheduler, which includes
-    - hardware parameters: like number of threads, vector size
-    - tuning level: the higher, more knobs will be tuned
+    - hardware parameters: number of threads, vector size, maximum unroll length...
+    - tuning level: Higher value will enable more tuning knobs
+
+    Examples
+    --------
+    >>> with AutoScheduleOptions(tuning_level=1, auto_pack=True, vec_size=16):
+    >>>     s, bufs = autotvm.create_schedule(s, [A, B, C])
     """
 
     # public accessors
-    TUNING_LEVEL = 1  # 0 -> tune nothing, 3 -> tune all knobs. 1 is the typical value
+    TUNING_LEVEL = 1   # 0 -> tune nothing, 3 -> tune all knobs. 1 is the typical value
 
     NUM_THREADS = 16   # CPU: number of threads
     TILE_SIZE = 8      # CPU: default tile size
     VEC_SIZE = 8       # CPU: default vector size
     MAX_UNROLL = 32    # CPU: max unroll factor
     CACHE_SIZE = 8192  # CPU: L1 cache size
+    AUTO_PACK = False  # CPU: whether use auto packing
 
-    MAX_GPU_THREADS = 1024       # GPU: maximum number of threads
-    MAX_SHARED_MEMORY = 32678    # GPU: maximum amount of shared memory
+    MAX_GPU_THREADS = 1024     # GPU: maximum number of threads
+    MAX_SHARED_MEMORY = 32678  # GPU: maximum amount of shared memory
 
     _current = None
 
@@ -52,14 +58,31 @@ class AutoScheduleOptions(object):
 AutoScheduleOptions.set_current(AutoScheduleOptions())
 
 def tuning_level(cfg):
-    """Return the current tuning level"""
+    """Return the current tuning level.
+
+    Parameters
+    ----------
+    cfg: Union[ConfigSpace, ConfigEntity, FallbackConfigEntity]
+        The current config entity or config space,
+    """
     if isinstance(cfg, FallbackConfigEntity):
         return 0
     else:
         return AutoScheduleOptions.TUNING_LEVEL
 
-def _get_axis_length(axis):
-    """Get the length of an axis. Returns 1 if any error occurs"""
+def get_axis_length(axis):
+    """Get the length of an axis. Returns 1 if any error occurs
+
+    Parameters
+    ----------
+    axis: IterVar
+        The iteration axis
+
+    Returns
+    -------
+    len: int
+        The length of the axis
+    """
     try:
         return axis.dom.extent.value
     except AttributeError:

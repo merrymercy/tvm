@@ -330,3 +330,6 @@ class BijectiveLayout(NodeBase):
             The inferred shape in src-layout.
         """
         return _api_internal._BijectiveLayoutBackwardShape(self, shape)
+
+    def __repr__(self):
+        return self.src_layout.name + " -> " + self.dst_layout.name
