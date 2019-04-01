@@ -78,8 +78,8 @@ List of operators
    topi.tile
    topi.shape
    topi.layout_transform
+   topi.tensordot
    topi.image.resize
-
 
 List of schedules
 ~~~~~~~~~~~~~~~~~
@@ -141,6 +141,7 @@ topi
 .. autofunction:: topi.tile
 .. autofunction:: topi.shape
 .. autofunction:: topi.layout_transform
+.. autofunction:: topi.tensordot
 
 topi.nn
 ~~~~~~~

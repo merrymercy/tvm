@@ -16,6 +16,7 @@ Python API
    container
    function
    autotvm
+   autodiff
    graph_runtime
    rpc
    bridge
