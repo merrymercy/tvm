@@ -19,7 +19,7 @@ using namespace tvm;
 // Unary intrinsic operators
 #define TOPI_DECLARE_UNARY_OP(OpName)                           \
   inline Tensor OpName(const Tensor& x,                         \
-                       std::string name = "tensor",             \
+                       std::string name = #OpName,             \
                        std::string tag = kElementWise) {        \
     return compute(x->shape, [&](const Array<Var>& i) {         \
         return ::tvm::OpName(x(i));                             \
@@ -47,7 +47,7 @@ TOPI_DECLARE_UNARY_OP(abs);
 * \return A Tensor whose op member is the identity operation
 */
 inline Tensor identity(const Tensor& x,
-                       std::string name = "tensor",
+                       std::string name = "identity",
                        std::string tag = kElementWise) {
   return compute(x->shape, [&](const Array<Var>& i) {
     return x(i);
@@ -64,7 +64,7 @@ inline Tensor identity(const Tensor& x,
 * \return A Tensor whose op member is the negation operation
 */
 inline Tensor negative(const Tensor& x,
-                       std::string name = "tensor",
+                       std::string name = "negative",
                        std::string tag = kElementWise) {
   return compute(x->shape, [&](const Array<Var>& i) {
     return -x(i);
@@ -81,7 +81,7 @@ inline Tensor negative(const Tensor& x,
 * \return A Tensor whose op member is the logical NOT operation
 */
 inline Tensor logical_not(const Tensor& x,
-                          std::string name = "tensor",
+                          std::string name = "logical_not",
                           std::string tag = kElementWise) {
   return compute(x->shape, [&](const Array<Var>& i) {
     return !x(i);
@@ -98,7 +98,7 @@ inline Tensor logical_not(const Tensor& x,
 * \return A Tensor whose op member is the sign
 */
 inline Tensor sign(const Tensor& x,
-                   std::string name = "tensor",
+                   std::string name = "sign",
                    std::string tag = kElementWise) {
   return compute(x->shape, [&](const Array<Var>& i) {
     Expr zero = make_zero(x->dtype);
@@ -125,7 +125,7 @@ inline Tensor sign(const Tensor& x,
 inline Tensor clip(const Tensor& x,
                    const Expr& a_min,
                    const Expr& a_max,
-                   std::string name = "tensor",
+                   std::string name = "clip",
                    std::string tag = kElementWise) {
   return compute(x->shape, [&](const Array<Var>& i) {
     auto min_val = tvm::cast(x->dtype, a_min);
@@ -148,7 +148,7 @@ inline Tensor clip(const Tensor& x,
  */
 inline Tensor cast(const Tensor& x,
                    Type type,
-                   std::string name = "tensor",
+                   std::string name = "cast",
                    std::string tag = kElementWise) {
   return compute(x->shape, [&](const Array<Var>& i) {
     auto expr = x(i);
@@ -174,7 +174,7 @@ inline Tensor cast(const Tensor& x,
 * \return A Tensor whose op member is the sum operation
 */
 inline Tensor elemwise_sum(const Array<Tensor>& xs,
-                           std::string name = "tensor",
+                           std::string name = "elemwise_sum",
                            std::string tag = kElementWise) {
   CHECK_GT(xs.size(), 0) << "elemwise sum must have at least one input tensor.";
   return compute(xs[0]->shape, [&](const Array<Var>& i) {
@@ -200,7 +200,7 @@ inline Tensor elemwise_sum(const Array<Tensor>& xs,
 inline Tensor full(const Array<Expr>& shape,
                    Type dtype,
                    const Expr fill_value,
-                   std::string name = "tensor",
+                   std::string name = "full",
                    std::string tag = kElementWise) {
   Expr ev = cast(dtype, fill_value);
   if (!ev.defined()) {
@@ -224,7 +224,7 @@ inline Tensor full(const Array<Expr>& shape,
 */
 inline Tensor full_like(const Tensor& x,
                         const Expr fill_value,
-                        std::string name = "tensor",
+                        std::string name = "full_like",
                         std::string tag = kElementWise) {
   Expr ev = cast(x->dtype, fill_value);
   return compute(x->shape, [&](const Array<Var>& i) {
