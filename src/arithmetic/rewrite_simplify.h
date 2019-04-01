@@ -29,6 +29,7 @@ class RewriteSimplifier::Impl : public IRMutator {
       : parent_(parent) {}
 
   void Update(const Var& var, const Expr& info, bool override);
+  Expr Mutate_(const Variable *op, const Expr& self) override;
   Expr Mutate_(const Add* op, const Expr& self) override;
   Expr Mutate_(const Sub* op, const Expr& self) override;
   Expr Mutate_(const Mul* op, const Expr& self) override;

@@ -133,6 +133,8 @@ def create_schedule(bufs):
     # analyze stages
     ginfo = static_analysis(bufs)
 
+    #print_stage_graph(ginfo.node_dict)
+
     # compute rewrite
     if opts.AUTO_PACK:
         bufs, modified = auto_pack(ginfo, cfg)

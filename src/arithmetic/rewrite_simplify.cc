@@ -92,6 +92,16 @@ Update(const Var& var, const Expr& info, bool override) {
 }
 
 Expr RewriteSimplifier::Impl::
+Mutate_(const Variable* op, const Expr& self) {
+  auto bd = parent_->const_int_bound(self);
+  if (bd->min_value == 0 &&  bd->max_value == 0) {
+    return make_const(self.type(), 0);
+  } else {
+    return self;
+  }
+}
+
+Expr RewriteSimplifier::Impl::
 Mutate_(const Add* op, const Expr& self) {
   Expr ret = IRMutator::Mutate_(op, self);
   op = ret.as<Add>();

@@ -12,6 +12,9 @@ from .generic import schedule_other_root, schedule_simple_reduce, \
 
 def _parallel_spatial(s, op, axes):
     """parallelize spatial axes for cpu"""
+    if len(axes) == 0:
+        return None
+
     axis_parallel = axes[0]
     prod = get_axis_length(axes[0])
 
@@ -37,6 +40,17 @@ def _var_in_expr(var, expr):
 
     _ir_pass.PostOrderVisit(expr, _check)
     return bool(find)
+
+def _divisible_split(s, T, axis, factor=None, nparts=None):
+    """Split an axis only by divisible factors. This is a walk around for partial tiles."""
+    # todo(lmzheng): remove this after fix loop partition
+    assert nparts is None or factor is None
+    if nparts is not None:
+        nparts = [x for x in get_factors(get_axis_length(axis)) if x >= nparts][0]
+        return s[T].split(axis, nparts=nparts)
+    if factor is not None:
+        factor = [x for x in get_factors(get_axis_length(axis)) if x <= factor][-1]
+        return s[T].split(axis, factor=factor)
 
 
 def _is_vectorizable(node, axis, strict=True):
@@ -70,9 +84,9 @@ def _is_vectorizable(node, axis, strict=True):
 def _schedule_root(s, op, axes, do_vec):
     """Schedule root nodes for cpu.
     Vectorize the innermost axis and parallelize the outermost axis"""
-    if do_vec and get_axis_length(axes[-1]) > opts.VEC_SIZE:
+    if do_vec and get_axis_length(axes[-1]) >= opts.VEC_SIZE:
         last = _parallel_spatial(s, op, axes)
-        par, vec = s[op].split(last, opts.VEC_SIZE)
+        par, vec = _divisible_split(s, op, last, opts.VEC_SIZE)
         s[op].vectorize(vec)
         if last not in s[op].op.axis:
             s[op].parallel(par)
@@ -113,7 +127,8 @@ def schedule_tune_direct_compute(s, cfg, node):
         else:
             cfg["#2-" + node.name + '_compute_axis'].val = -1
     if tuning_level(cfg) < 3:
-        cfg["#3-" + node.name + '_vec'].val = _is_vectorizable(node, axes[-1])
+        if len(axes) > 0:
+            cfg["#3-" + node.name + '_vec'].val = _is_vectorizable(node, axes[-1])
 
     # =========================== Apply Config ===========================
     val = cfg["#2-" + node.name + '_compute_axis'].val
@@ -125,7 +140,8 @@ def schedule_tune_direct_compute(s, cfg, node):
         s[op].compute_at(s[dst.op], target_axes[val])
         if cfg["#3-" + node.name + '_vec'].val and \
                         get_axis_length(axes[-1]) >= opts.VEC_SIZE:
-            _, vec = s[op].split(axes[-1], opts.VEC_SIZE)
+            # todo(lmzheg): remove this condition after fix loop partition
+            _, vec = _divisible_split(s, op, axes[-1], opts.VEC_SIZE)
             s[op].vectorize(vec)
 
 
@@ -203,10 +219,10 @@ def schedule_simple_reduce_cpu(s, cfg, node):
     # 1. parallelize reduction axis
     # 2. vectorize reduction axis
     # 3. do both, parallel and vectorize reduction axis
-
     def _parallel_reduction(T):
         r = s[T].op.reduce_axis[0]
-        ro, ri = s[T].split(r, nparts=opts.NUM_THREADS)
+        #ro, ri = s[T].split(r, nparts=opts.NUM_THREADS)
+        ro, ri = _divisible_split(s, T, r, nparts=opts.NUM_THREADS)
         TF = s.rfactor(T, ro, factor_axis=len(s[T].op.axis))
         TF = TF[0] if not isinstance(TF, _tensor.Tensor) else TF
 
@@ -220,7 +236,8 @@ def schedule_simple_reduce_cpu(s, cfg, node):
 
     def _vectorize_reduction(T):
         r = s[T].op.reduce_axis[-1]
-        ro, ri = s[T].split(r, opts.VEC_SIZE)
+        #ro, ri = s[T].split(r, opts.VEC_SIZE)
+        ro, ri = _divisible_split(s, T, r, opts.VEC_SIZE)
         TF = s.rfactor(T, ri, factor_axis=len(s[T].op.axis))
         TF = TF[0] if not isinstance(TF, _tensor.Tensor) else TF
 
@@ -234,13 +251,15 @@ def schedule_simple_reduce_cpu(s, cfg, node):
     def _parallel_vectorize_reduction_single(T):
         # parallel
         r = s[T].op.reduce_axis[0]
-        ro, ri = s[T].split(r, nparts=opts.NUM_THREADS)
+        #ro, ri = s[T].split(r, nparts=opts.NUM_THREADS)
+        ro, ri = _divisible_split(s, T, r, nparts=opts.NUM_THREADS)
         TF = s.rfactor(T, ro, factor_axis=len(s[T].op.axis))
         TF = TF[0] if not isinstance(TF, _tensor.Tensor) else TF
 
         # vectorize
         r = s[TF].op.reduce_axis[0]
-        ro, ri = s[TF].split(r, opts.VEC_SIZE)
+        #ro, ri = s[TF].split(r, opts.VEC_SIZE)
+        ro, ri = _divisible_split(s, TF, r, opts.VEC_SIZE)
         TFF = s.rfactor(TF, ri, factor_axis=len(s[TF].op.axis))
         TFF = TFF[0] if not isinstance(TFF, _tensor.Tensor) else TFF
 
@@ -254,13 +273,15 @@ def schedule_simple_reduce_cpu(s, cfg, node):
     def _parallel_vectorize_reduction_multi(T):
         # parallel
         r = s[T].op.reduce_axis[0]
-        ro, ri = s[T].split(r, nparts=opts.NUM_THREADS)
+        #ro, ri = s[T].split(r, nparts=opts.NUM_THREADS)
+        ro, ri = _divisible_split(s, T, r, nparts=opts.NUM_THREADS)
         TF = s.rfactor(T, ro, factor_axis=len(s[T].op.axis))
         TF = TF[0] if not isinstance(TF, _tensor.Tensor) else TF
 
         # vectorize
         r = s[TF].op.reduce_axis[-2]
-        ro, ri = s[TF].split(r, opts.VEC_SIZE)
+        #ro, ri = s[TF].split(r, opts.VEC_SIZE)
+        ro, ri = _divisible_split(s, TF, r, opts.VEC_SIZE)
         TFF = s.rfactor(TF, ri, factor_axis=len(s[TF].op.axis))
         TFF = TFF[0] if not isinstance(TFF, _tensor.Tensor) else TFF
 
@@ -298,7 +319,8 @@ def schedule_simple_reduce_cpu(s, cfg, node):
         if cfg[prefix + '_vec_reduction'].val:
             TF = _vectorize_reduction(tensor)
             last = _parallel_spatial(s, output, s[output].op.axis)
-            s[TF].compute_at(s[output], last)
+            if last is not None:
+                s[TF].compute_at(s[output], last)
         else:
             last = _parallel_spatial(s, output, s[output].op.axis)
 
@@ -435,4 +457,3 @@ def schedule_complex_reduce_cpu(s, cfg, node):
         axis.attached_length = cfg[prefix + "_sp_tile_%d" % i].size[0]
 
     _parallel_spatial(s, final, parallel_axes)
-

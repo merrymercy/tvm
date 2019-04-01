@@ -6,7 +6,7 @@ The StageGraph is a DAG with the same structure as the original computational DA
 but with more annotation on computation and access type.
 """
 
-from ... import ir_pass as _ir_pass, tensor as _tensor, expr as _expr
+from ... import ir_pass as _ir_pass, tensor as _tensor, expr as _expr, arith as _arith
 from ...contrib.util import reg_enum_class
 
 from .common import get_axis_length
@@ -137,7 +137,7 @@ def _reduce_node_reusable_axes(node):
 def _remove_const_shift(args):
     """extract access pattern but remove const shift.
     e.g. access pattern (n, c, h-1, w-1) in padding will be regard as a special elemwise op"""
-    rets = []
+    rets = set()
     has_const_shift = False
     for x in args:
         if isinstance(x, _expr.IntImm):
@@ -146,17 +146,53 @@ def _remove_const_shift(args):
         if (isinstance(x, (_expr.Add, _expr.Sub)) and
                 ((isinstance(x.a, _expr.IntImm) and isinstance(x.b, _expr.IntImm))
                     or (isinstance(x.a, _expr.Var) and isinstance(x.b, _expr.IntImm)))):
-            rets.append(x.a if isinstance(x.a, _expr.Var) else x.b)
+            rets.add(x.a if isinstance(x.a, _expr.Var) else x.b)
             has_const_shift = True
         else:
-            rets.append(x)
+            rets.add(x)
 
     return rets, has_const_shift
+
+
+def _classify_edge_type(access, op_axes):
+    """Classify the type of a read edge"""
+    same = True
+    if len(access) > 1:
+        x = access[0]
+        for y in access[1:]:
+            if not (len(x) == len(y) and all([a.same_as(b) for (a, b) in zip(x, y)])):
+                same = False
+                break
+
+    if not same:
+        ret = StageEdgeType.OTHER
+    else:
+        acc_axes, has_const_shift = _remove_const_shift(list(access[0]))
+        if acc_axes <= op_axes:
+            if op_axes >= acc_axes:
+                ret = StageEdgeType.ELEMWISE
+            else:
+                ret = StageEdgeType.BROADCAST
+
+            if has_const_shift:
+                ret = StageEdgeType.WEAK_INLINEABLE
+        else:
+            ret = StageEdgeType.OTHER
+
+    return ret
 
 
 def _analyze_read_edges(node_dict, n):
     """analyze read edges for a node"""
     op = n.op
+
+    analyzer = _arith.Analyzer()
+    for axis in n.op.axis:
+        try:
+            extent = axis.dom.extent.value
+            analyzer.update(axis.var, _arith.ConstIntBound(0, extent - 1))
+        except AttributeError:
+            pass
 
     # gather access pattern
     for body in op.body:
@@ -165,50 +201,14 @@ def _analyze_read_edges(node_dict, n):
             if dst_node not in n.read_edges:
                 n.read_edges[dst_node] = StageEdge()
 
-            n.read_edges[dst_node].access.append(pattern)
+            n.read_edges[dst_node].access.append([analyzer.rewrite_simplify(analyzer.canonical_simplify(x))
+                                                  for x in pattern])
 
-    op_axes = list([x.var for x in op.axis])
+    op_axes = set([x.var for x in op.axis])
 
     # classify (read) edge type
     for dst_node, edge in n.read_edges.items():
-        same = True
-        if len(edge.access) > 1:
-            x = edge.access[0]
-            for y in edge.access[1:]:
-                if not (len(x) == len(y) and all([a.same_as(b) for (a, b) in zip(x, y)])):
-                    same = False
-                    break
-
-        if not same:
-            edge.type = StageEdgeType.OTHER
-        else:
-            acc_axes, has_const_shift = _remove_const_shift(list(edge.access[0]))
-            if _node_set_in(acc_axes, op_axes):
-                if _node_set_in(op_axes, acc_axes):
-                    edge.type = StageEdgeType.ELEMWISE
-                else:
-                    edge.type = StageEdgeType.BROADCAST
-            else:
-                edge.type = StageEdgeType.OTHER
-
-                # try a rough analysis to detect layout transform style elemwise access
-                #  if np.prod(get_const_tuple(n.op.output(0).shape)) == \
-                #         np.prod(get_const_tuple(dst_node.op.output(0).shape)):
-                #     match = True
-                #     analyzer = arith.Analyzer()
-                #     for v, extent in zip(op_axes, op.output(0).shape):
-                #         analyzer.update(v, arith.ConstIntBound(0, extent.value-1))
-                #     for _expr, extent in zip(acc_axes, dst_node.op.output(0).shape):
-                #         bound = analyzer.const_int_bound(_expr)
-                #         if bound.min_value != 0 or bound.max_value != extent.value - 1:
-                #             match = False
-                #             break
-                #     if match:
-                #         edge.type = StageEdgeType.ELEMWISE
-
-            if has_const_shift and edge.type in [StageEdgeType.ELEMWISE, StageEdgeType.BROADCAST]:
-                edge.type = StageEdgeType.WEAK_INLINEABLE
-
+        edge.type = _classify_edge_type(edge.access, op_axes)
         node_dict[dst_node.op].write_edges[n] = edge
 
 
@@ -295,6 +295,10 @@ def topo_order(node_dict):
 
     return ret
 
+def _replace_vars(exprs, replace_dict):
+    """Replace variables in exprs according to replace_dict"""
+    return [replace_dict.get(e, e) for e in exprs]
+
 def annotate_compute_location(node_dict, bufs):
     """Divide stages into groups and annotate the compute locations
     (root, inline, tunable, etc) for stages.
@@ -317,44 +321,71 @@ def annotate_compute_location(node_dict, bufs):
         n.compute_at_loc = n
 
     already_complex = set()  # record group that already has a complex op
+    nodes = topo_order(node_dict)
 
-    # use simple greedy alg to fuse stages
-    for n in reversed(topo_order(node_dict)):
+    # Inline elemwise/broadcast ops
+    for n in nodes:
         if n.op in output_ops:
             _compute_root(n)
             continue
 
-        if n.type in [StageNodeType.COMPLEX_REDUCTION, StageNodeType.SIMPLE_REDUCTION]:
-            if len(n.write_edges) > 1:
-                _compute_root(n)
-            else:
-                dst, edge = list(n.write_edges.items())[0]
-                if (edge.type == StageEdgeType.ELEMWISE and dst.compute_at_loc is not None
-                        and dst.compute_at_loc not in already_complex):
-                    if dst.compute_at_type == ComputeAtType.COMPUTE_TUNE:
-                        dst.compute_at_type = ComputeAtType.COMPUTE_ROOT
-                        dst.compute_at_loc = dst
-                    n.compute_at_type = ComputeAtType.COMPUTE_FUSE
-                    n.compute_at_loc = dst.compute_at_loc
-                    already_complex.add(dst.compute_at_loc)
-                else:
-                    _compute_root(n)
-        elif n.type == StageNodeType.DIRECT_COMPUTE:
-            if all([x.type in [StageEdgeType.ELEMWISE, StageEdgeType.BROADCAST,]
+        # todo(lmzheng): do not inline expensive functions or repeated-called functions
+        if n.type == StageNodeType.DIRECT_COMPUTE:
+            if all([x.type in [StageEdgeType.ELEMWISE, StageEdgeType.BROADCAST]
                     for x in n.read_edges.values()]):
-
                 n.compute_at_type = ComputeAtType.COMPUTE_INLINE
 
-                for dst, edge in n.write_edges.items():
-                    if edge.type == StageEdgeType.ELEMWISE and _shape_same_as(dst.shape, n.shape):
-                        n.compute_at_loc = dst.compute_at_loc  # path compression, this is for fused op to
-                        break                                  # find the final output
+                # if inline this function will cost too much re-computation, skip
+                if any([x.type == StageNodeType.COMPLEX_REDUCTION for x in n.write_edges]):
+                    continue
+
+                vars = [x.var for x in n.op.axis]
+
+                # relink read/write edges
+                for w_dst, w_edge in n.write_edges.items():
+                    op_axes = set([x.var for x in w_dst.op.axis])
+                    for r_dst, r_edge in n.read_edges.items():
+                        if r_dst in w_dst.read_edges:
+                            edge = w_dst.read_edges[r_dst]
+                            assert w_dst.read_edges[r_dst] == r_dst.write_edge[w_dst]
+                        else:
+                            edge = StageEdge()
+                            w_dst.read_edges[r_dst] = edge
+                            r_dst.write_edges[w_dst] = edge
+
+                        for acc in w_edge.access:
+                            replace_dict = {v: a for v, a in zip(vars, acc)}
+                            for acc2 in r_edge.access:
+                                edge.access.append(_replace_vars(acc2, replace_dict))
+
+                        # classify edge type
+                        edge.type = _classify_edge_type(edge.access, op_axes)
+                for w_dst in n.write_edges:
+                    del w_dst.read_edges[n]
+                for r_dst in n.read_edges:
+                    del r_dst.write_edges[n]
+
+    # Use simple greedy alg to fuse stages
+    for n in reversed(nodes):
+        if n.op in output_ops or len(n.write_edges) > 1:  # output or be used multiple times
+            _compute_root(n)
+            continue
+
+        if n.type in [StageNodeType.COMPLEX_REDUCTION, StageNodeType.SIMPLE_REDUCTION]:
+            dst, edge = list(n.write_edges.items())[0]
+            if (edge.type == StageEdgeType.ELEMWISE and dst.compute_at_loc is not None
+                    and dst.compute_at_loc not in already_complex):
+                if dst.compute_at_type == ComputeAtType.COMPUTE_TUNE:
+                    dst.compute_at_type = ComputeAtType.COMPUTE_ROOT
+                    dst.compute_at_loc = dst
+                n.compute_at_type = ComputeAtType.COMPUTE_FUSE
+                n.compute_at_loc = dst.compute_at_loc
+                already_complex.add(dst.compute_at_loc)
             else:
-                if len(n.write_edges) == 1:
-                    n.compute_at_type = ComputeAtType.COMPUTE_TUNE
-                    n.compute_at_loc = list(n.write_edges.keys())[0]
-                else:
-                    _compute_root(n)
+                _compute_root(n)
+        elif n.type == StageNodeType.DIRECT_COMPUTE:
+            n.compute_at_type = ComputeAtType.COMPUTE_TUNE
+            n.compute_at_loc = list(n.write_edges.keys())[0]
         else:
             _compute_root(n)
 
@@ -378,10 +409,13 @@ def print_stage_graph(node_dict):
     node_dict: dict[op -> StageNode]
         The parsed stage graph
     """
-    for op, node in node_dict.items():
+    for node in topo_order(node_dict):
+        op = node.op
         print("============")
-        print(op, StageNodeType.to_str(node_dict[op].type), op.output(0).shape)
+        print(node, op, StageNodeType.to_str(node_dict[op].type), op.output(0).shape)
         for dst, edge in node.read_edges.items():
-            print("read:", dst.op, StageEdgeType.to_str(edge.type), edge.access)
+            print("read:", dst, StageEdgeType.to_str(edge.type), edge.access)
+        for dst, edge in node.write_edges.items():
+            print("write:", dst, StageEdgeType.to_str(edge.type), edge.access)
         print("compute_at:", ComputeAtType.to_str(node.compute_at_type), node.compute_at_loc)
     print("============")

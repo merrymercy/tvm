@@ -368,7 +368,7 @@ def lower(sch,
     for f in lower_phase1:
         stmt = f(stmt)
     # Phase 2
-    #stmt = ir_pass.LoopPartition(stmt, cfg.partition_const_loop)
+    stmt = ir_pass.LoopPartition(stmt, cfg.partition_const_loop)
     stmt = ir_pass.Simplify(stmt)
     stmt = ir_pass.VectorizeLoop(stmt)
     stmt = ir_pass.InjectVirtualThread(stmt)
