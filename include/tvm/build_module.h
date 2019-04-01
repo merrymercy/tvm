@@ -214,7 +214,7 @@ class BuildConfigNode : public Node {
   bool detect_global_barrier = false;
 
   /*! \brief Whether to partition const loop */
-  bool partition_const_loop = true;
+  bool partition_const_loop = false;
 
   /*! \brief Whether to dump the IR of each pass (only when building from python) */
   std::vector< std::pair<int, runtime::PackedFunc> > add_lower_pass;

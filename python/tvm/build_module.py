@@ -114,6 +114,8 @@ class BuildConfig(NodeBase):
     is constructed. See _node_defaults for the fields.
     """
 
+    # NOTE: Modification to the following lines cannot change the default value
+    # Please change the values in c++ code. (include/tvm/build_module.h)
     _node_defaults = {
         "auto_unroll_max_step": 0,
         "auto_unroll_max_depth": 8,
