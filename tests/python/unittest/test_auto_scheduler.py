@@ -12,6 +12,20 @@ from tvm.autotvm.auto_schedule.common import AutoScheduleOptions as opts
 from tvm.contrib.util import get_lower_ir
 from topi.util import get_const_tuple
 
+def _empty_val(tensor, ctx):
+    """Create empty tensor values for a tensor or list of tensors"""
+    if isinstance(tensor, (list, tuple)):
+        return [_empty_val(t, ctx) for t in tensor]
+    else:
+        return tvm.nd.empty([x.value for x in tensor.shape], tensor.dtype, ctx=ctx)
+
+def _run_func(s, bufs):
+    """Test the correctness of codegen by running function
+     (test runtime errors like shared memory exceeded, number of threads exceeded)"""
+    ctx = tvm.context(str(tvm.target.current_target()))
+    func = tvm.build(s, bufs)
+    args = _empty_val(bufs, ctx)
+    func(*args)
 
 def _test_speed(bufs, target):
     """Utility for testing speed"""
@@ -48,6 +62,7 @@ def test_parallel_vec():
     with tvm.target.create('cuda'):
         s, bufs = autotvm.create_schedule([A, B])
         stmt = tvm.lower(s, bufs, simple_mode=True)
+        _run_func(s, bufs)
 
     assert stmt.body.node.var.name == "blockIdx.x"
     assert stmt.body.attr_key == "thread_extent"
@@ -73,6 +88,7 @@ def test_inline():
     with tvm.target.create('cuda'):
         s, bufs = autotvm.create_schedule([A, C])
         stmt = tvm.lower(s, bufs, simple_mode=True)
+        _run_func(s, bufs)
 
     assert 'B_Buffer' not in str(stmt)
 
@@ -164,6 +180,7 @@ def test_norm():
     with tvm.target.create('cuda'):
         s, bufs = autotvm.create_schedule([A, B])
         stmt = tvm.lower(s, bufs, simple_mode=True)
+        _run_func(s, bufs)
 
     stmt = str(stmt)
     assert len(re.findall("\nproduce", stmt)) == 0  # test fuse
@@ -222,6 +239,7 @@ def test_more_reduction():
         for buffers in [pool()]:
             s, bufs = autotvm.create_schedule(buffers)
             stmt = tvm.lower(s, bufs, simple_mode=True)
+            _run_func(s, bufs)
             stmt = str(stmt)
             assert "allreduce" not in stmt
 
@@ -229,6 +247,7 @@ def test_more_reduction():
             s, bufs = autotvm.create_schedule(buffers)
             stmt = tvm.lower(s, bufs, simple_mode=True)
             stmt = str(stmt)
+            _run_func(s, bufs)
             assert "allreduce" not in stmt
             assert "if " not in stmt
 
@@ -236,6 +255,7 @@ def test_more_reduction():
             s, bufs = autotvm.create_schedule(buffers)
             stmt = tvm.lower(s, bufs, simple_mode=True)
             stmt = str(stmt)
+            _run_func(s, bufs)
             assert "allreduce" in stmt
 
 
@@ -259,9 +279,9 @@ def test_matmul():
     with tvm.target.create('cuda'):
         s, bufs = autotvm.create_schedule([A, B, C])
         stmt = tvm.lower(s, bufs, simple_mode=True)
+        _run_func(s, bufs)
 
     stmt = str(stmt)
-    assert "if " not in stmt
     assert "shared" in stmt
 
 
@@ -286,6 +306,7 @@ def test_dense_fuse():
     with tvm.target.create('cuda'):
         s, bufs = autotvm.create_schedule([A, W, O])
         stmt = tvm.lower(s, bufs, simple_mode=True)
+        _run_func(s, bufs)
 
     stmt = str(stmt)
     assert "shared" in stmt
@@ -314,6 +335,7 @@ def test_conv_nchw():
     with tvm.target.create('cuda'):
         s, bufs = autotvm.create_schedule([A, W, bias, O])
         stmt = tvm.lower(s, bufs, simple_mode=True)
+        _run_func(s, bufs)
 
     shared_mem = 0
     for item in re.findall("allocate .*\.shared\[float32 \* (\d*)\]", str(stmt)):
@@ -362,6 +384,7 @@ def test_conv3d():
     with tvm.target.create('cuda'):
         s, bufs = autotvm.create_schedule([A, B, bias, C])
         stmt = tvm.lower(s, bufs, simple_mode=True)
+        _run_func(s, bufs)
 
     shared_mem = 0
     for item in re.findall("allocate .*\.shared\[float32 \* (\d*)\]", str(stmt)):
@@ -391,6 +414,7 @@ def test_depthwise_conv2d():
     with tvm.target.create('cuda'):
         s, bufs = autotvm.create_schedule([A, W, bias, O])
         stmt = tvm.lower(s, bufs, simple_mode=True)
+        _run_func(s, bufs)
 
     stmt = str(stmt)
     assert "shared" in stmt
@@ -424,6 +448,7 @@ def test_pack():
         with autotvm.AutoScheduleOptions(auto_pack=True):
             s, bufs = autotvm.create_schedule([A, B, D])
             stmt = tvm.lower(s, bufs, simple_mode=True)
+        _run_func(s, bufs)
 
     stmt = str(stmt)
     # don't pack for gpu

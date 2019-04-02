@@ -24,8 +24,8 @@ class AutoScheduleOptions(object):
     AUTO_PACK = False  # CPU: whether use auto packing
 
     MAX_GPU_THREADS = 1024     # GPU: maximum number of threads
-    MAX_SHARED_MEMORY = 32678  # GPU: maximum amount of shared memory
-
+    MAX_SHARED_MEMORY = 1024   # GPU: maximum amount of shared memory (bytes) used per block
+                               # todo(lmzheng): this value is confusing, need refactor to use real hardware value
     _current = None
 
     def __init__(self, **kwargs):

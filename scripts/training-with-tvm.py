@@ -85,11 +85,12 @@ logsoftmax = topi.log(exps/sumexps)
 
 loss = - topi.sum(y * logsoftmax) / batch_size
 
-
 gradients = list(tvm.differentiate(loss, weights))
 learning_rate = tvm.placeholder(())
 new_weights = [w - learning_rate*g for w, g in zip(weights, gradients)]
 
+target = tvm.target.create('llvm')
+ctx = tvm.context(str(target))
 
 # get tensor's shape as a list
 def get_shape(tensor):
@@ -100,7 +101,7 @@ def empty_val(tensor):
     if isinstance(tensor, list):
         return [empty_val(t) for t in tensor]
     else:
-        return tvm.nd.empty(get_shape(tensor), tensor.dtype)
+        return tvm.nd.empty(get_shape(tensor), tensor.dtype, ctx=ctx)
 
 def schedule_somehow(sched):
     # This autoinlining turned aoyt to be harmful because it prevents memoization of some expensive operations
@@ -108,29 +109,30 @@ def schedule_somehow(sched):
     for s in sched.stages:
         if isinstance(s.op, tvm.tensor.ComputeOp) and isinstance(s.op.body[0], tvm.expr.Reduce):
             ax = s.fuse(*s.op.axis)
-            axo, axi = s.split(ax, nparts=20)
+            axo, axi = s.split(ax, nparts=12)
             s.parallel(axo)
 
-#sched = tvm.create_schedule(loss.op)
-#schedule_somehow(sched)
-#testing_module = tvm.build(sched, [loss, x, y] + weights)
-
-with tvm.target.create('llvm'):
-    bufs = [loss, x, y] + weights
-    s, bufs = autotvm.create_schedule(bufs)
-    print(tvm.lower(s, bufs, simple_mode=True))
-    testing_module = tvm.build(s, bufs)
-
-sched = tvm.create_schedule([loss.op] + [w.op for w in new_weights])
+sched = tvm.create_schedule(loss.op)
 schedule_somehow(sched)
-training_module = tvm.build(sched, [loss, x, y, learning_rate] + new_weights + weights)
+testing_module = tvm.build(sched, [loss, x, y] + weights)
+training_module = None
+
+#with target:
+#    bufs = [loss, x, y] + weights
+#    s, bufs = autotvm.create_schedule(bufs)
+#    testing_module = tvm.build(s, bufs)
+
+#    bufs = [loss, x, y, learning_rate] + new_weights + weights
+#    s, bufs = autotvm.create_schedule(bufs)
+#    training_module = tvm.build(sched, bufs)
+#    training_module = None
 
 class TVMModel:
     def __init__(self):
         self.weights_values = empty_val(weights)
         
     def test(self, xval, yval):
-        args = [empty_val(loss)] + [tvm.ndarray.array(xval), tvm.ndarray.array(yval)] + self.weights_values
+        args = [empty_val(loss)] + [tvm.ndarray.array(xval, ctx=ctx), tvm.ndarray.array(yval, ctx=ctx)] + self.weights_values
         testing_module(*args)
         return args[0].asnumpy()
 
@@ -173,14 +175,23 @@ keras_model.summary()
 tvm_model = TVMModel()
 
 
-
 tic = time.time()
 for xx, yy in itertools.islice(batches(x_train, y_train), 1000):
     keras_model.test_on_batch(xx, yy)
-print("%.2f" % (time.time() - tic))
+print("TF: %.2f" % (time.time() - tic))
 
 tic = time.time()
 for xx, yy in itertools.islice(batches(x_train, y_train), 1000):
     tvm_model.test(xx, yy)
-print("%.2f" % (time.time() - tic))
+print("TVM: %.2f" % (time.time() - tic))
+
+tic = time.time()
+for xx, yy in itertools.islice(batches(x_train, y_train), 1000):
+    keras_model.test_on_batch(xx, yy)
+print("TF: %.2f" % (time.time() - tic))
+
+tic = time.time()
+for xx, yy in itertools.islice(batches(x_train, y_train), 1000):
+    tvm_model.test(xx, yy)
+print("TVM: %.2f" % (time.time() - tic))
 

@@ -347,7 +347,7 @@ def annotate_compute_location(node_dict, bufs):
                     for r_dst, r_edge in n.read_edges.items():
                         if r_dst in w_dst.read_edges:
                             edge = w_dst.read_edges[r_dst]
-                            assert w_dst.read_edges[r_dst] == r_dst.write_edge[w_dst]
+                            assert w_dst.read_edges[r_dst] == r_dst.write_edges[w_dst]
                         else:
                             edge = StageEdge()
                             w_dst.read_edges[r_dst] = edge

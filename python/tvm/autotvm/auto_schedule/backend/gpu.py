@@ -140,6 +140,7 @@ def schedule_simple_reduce_gpu(s, cfg, node):
         spatial_prod = np.prod([get_axis_length(x) for x in s[op].op.axis])
         reduction_prod = np.prod([get_axis_length(x) for x in s[op].op.reduce_axis])
 
+        # decide whether to parallel reduction axes or spatial axes
         if spatial_prod >= get_axis_length(s[op].op.reduce_axis[0]) \
                 or reduction_prod < opts.NUM_THREADS * 4:
             cfg[prefix + '_parallel_loc'].val = 'spatial'
@@ -160,18 +161,12 @@ def schedule_simple_reduce_gpu(s, cfg, node):
 
         tx = s[T].op.reduce_axis[0]
         thread_x = thread_axis('threadIdx.x')
-        s[T].bind(tx, thread_axis('threadIdx.x'))
+        s[T].bind(tx, thread_x)
         s[TF].compute_at(s[T], tx)
 
         s[output].set_store_predicate(thread_x.equal(0))
-        if len(s[T].op.axis) != 0:
-            num_tx = _target.current_target().max_num_threads // cfg[prefix + '_parallel_num'].val
-            return _parallel_spatial(s, output, s[output].op.axis, num_tx, "threadIdx.y")
-        else:
-            if s[output].op.axis:
-                return s[output].op.axis[-1]
-            else:
-                return None
+        num_tx = _target.current_target().max_num_threads // cfg[prefix + '_parallel_num'].val
+        return _parallel_spatial(s, output, s[output].op.axis, num_tx, "threadIdx.y")
 
     tensor = op.output(0)
 
@@ -182,7 +177,6 @@ def schedule_simple_reduce_gpu(s, cfg, node):
 
     if op != output and last is not None:
         s[op].compute_at(s[output], last)
-
 
 @schedule_complex_reduce.register('gpu')
 def schedule_complex_reduce_gpu(s, cfg, node):
@@ -223,6 +217,9 @@ def schedule_complex_reduce_gpu(s, cfg, node):
 
     # ========================== Heuristic Fill ==========================
     if tuning_level(cfg) < 1:
+        # todo(lmzheng): The following logic might be wrong?
+        # refactor this part by doing more performance experiments
+
         # 1. Determine block size: use as much shared memory as possible
         # Assume tiling on every dimension can increase the locality or benefit load,
         # we greedily increase tile size for each dimension, in round robin order.
