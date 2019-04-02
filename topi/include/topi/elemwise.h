@@ -19,7 +19,7 @@ using namespace tvm;
 // Unary intrinsic operators
 #define TOPI_DECLARE_UNARY_OP(OpName)                           \
   inline Tensor OpName(const Tensor& x,                         \
-                       std::string name = #OpName,             \
+                       std::string name = #OpName "_",          \
                        std::string tag = kElementWise) {        \
     return compute(x->shape, [&](const Array<Var>& i) {         \
         return ::tvm::OpName(x(i));                             \
