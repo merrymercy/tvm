@@ -51,6 +51,8 @@ def concat_list_to_block(lst):
         stmt = lst[n - 1 - i]
         if isinstance(stmt, _stmt.AssertStmt):
             body = _make.AssertStmt(stmt.condition, stmt.message, body)
+        elif isinstance(stmt, _stmt.LetStmt):
+            body = _make.LetStmt(stmt.var, stmt.value, body)
         else:
             body = _make.Block(stmt, body)
     return body
@@ -78,6 +80,7 @@ class Symbol(Enum):
     LoopVar = 8
     ConstLoopVar = 9
     ThreadBind = 10
+    LetBindVar = 11
 
 
 class HybridParser(ast.NodeVisitor):
@@ -199,7 +202,7 @@ class HybridParser(ast.NodeVisitor):
             _domain = [_make.range_by_min_extent(0, i) for i in _buf.shape]
             _dtype = _buf.dtype
             _true = _api.convert(True)
-            body = _make.Realize(_buf.op, 0, _dtype, _domain, _true, body)
+            body = _make.Realize(_buf.op, _buf.value_index, _dtype, _domain, _true, body)
             body = _make.AttrStmt(_buf.op, 'realize_scope', _api.convert(_scope), body)
 
         for elem in to_pop:
@@ -257,6 +260,8 @@ class HybridParser(ast.NodeVisitor):
             return entry.var
         if ty is Symbol.ConstVar:
             return entry if isinstance(node.ctx, ast.Load) else None
+        if ty is Symbol.LetBindVar:
+            return entry
         if ty is Symbol.BufferVar:
             if isinstance(node.ctx, ast.Load):
                 return _make.Call(entry.dtype, entry.name, [_api.const(0, 'int32')], \
@@ -297,22 +302,7 @@ class HybridParser(ast.NodeVisitor):
 
         return _make.Provide(buf.op, 0, value, args)
 
-
-    def visit_Assign(self, node):
-        rhs = self.visit(node.value)
-        if isinstance(rhs, Operation):
-            rmap = {}
-            _internal_assert(len(node.targets) == rhs.num_outputs, \
-                             "Unable to detuple the outs to targets")
-            for i in range(rhs.num_outputs):
-                _internal_assert(isinstance(node.targets[i], ast.Name),
-                                 "You should bind a pure name to the tensors")
-                self.add_symbol(node.targets[i].id, Symbol.GlobalBuffer, rhs.output(i))
-                rmap[rhs.outputs[i].op] = rhs.output(i)
-            return util.replace_io(rhs.body, rmap)
-
-        _internal_assert(len(node.targets) == 1, "So far only one-valued assignment is supported!")
-        lhs = node.targets[0]
+    def generate_one_assign(self, lhs, rhs):
         if isinstance(rhs, _expr.Expr):
             rhs = _ir_pass.Simplify(rhs)
         if isinstance(lhs, ast.Name):
@@ -341,19 +331,62 @@ class HybridParser(ast.NodeVisitor):
                                      "Single variable not supported in devices' side!\n" + \
                                      "If you are using GPU, please allocate a 'local' spad " + \
                                      "outside the bind body")
-                    ph = _api.placeholder((1, ), dtype=rhs.dtype, name=lhs)
-                    self.add_symbol(lhs, Symbol.BufferVar, ph)
+                    if ast.Store not in rw:  # this value is only be assigned once, we can use let binding
+                        self.add_symbol(lhs, Symbol.LetBindVar, _api.var(name=lhs, dtype=rhs.dtype))
+                    else:
+                        ph = _api.placeholder((1, ), dtype=rhs.dtype, name=lhs)
+                        self.add_symbol(lhs, Symbol.BufferVar, ph)
+
             lhs = self.visit(lhs_)
-            if lhs is not None:
+            if isinstance(lhs, (list, tuple)):    # store to a buffer
                 buf, args = lhs
                 return _make.Provide(buf.op, 0, rhs, args)
-            return util.make_nop()
+            elif lhs is not None:  # assign to a let binding var
+                _internal_assert(isinstance(lhs, _expr.Var), "Lhs can only be a var for let binding.")
+                return _make.LetStmt(lhs, rhs, util.make_nop())
+            else:
+                return util.make_nop()
 
         lhs, args = self.visit(lhs)
         _internal_assert(isinstance(lhs, Tensor), \
                          "An array access's LHS is expected to be a expr.Call!")
         res = _make.Provide(lhs.op, lhs.value_index, rhs, args)
         return res
+
+
+    def visit_Assign(self, node):
+        rhs = self.visit(node.value)
+
+        _internal_assert(len(node.targets) == 1, "Internal Error")
+        # todo(lmzheng) : I tried several cases and I don't know when len(node.targets) != 1.
+        # Even in tuple assignment (e.g.   a, b, c = 2, 3, 1),
+        # len(node.targets) is still 1 and node.targets[0] is a ast.Tuple of size 3
+
+        lhs = node.targets[0]
+
+        if isinstance(rhs, Operation):
+            rmap = {}
+            if isinstance(lhs, ast.Tuple):
+                lhs = lhs.elts
+            else:
+                lhs = (lhs,)
+            _internal_assert(len(lhs) == rhs.num_outputs, \
+                             "Unable to detuple the outs to targets")
+            for i in range(rhs.num_outputs):
+                _internal_assert(isinstance(lhs[i], ast.Name),
+                                 "You should bind a pure name to the tensors")
+                self.add_symbol(lhs[i].id, Symbol.GlobalBuffer, rhs.output(i))
+                rmap[rhs.outputs[i].op] = rhs.output(i)
+            return util.replace_io(rhs.body, rmap)
+
+        if isinstance(lhs, ast.Tuple):
+            # do not support nested tuple
+            _internal_assert(isinstance(rhs, (tuple, list, Array)) and len(lhs.elts) == len(rhs),
+                             "The numbers of elements mismatch between lhs and rhs in tuple assignment")
+            assign_list = [self.visit_one_assign(lhs.elts[i], rhs[i]) for i in range(len(lhs.elts))]
+            return concat_list_to_block(assign_list)
+        else:
+            return self.generate_one_assign(lhs, rhs)
 
 
     def visit_Index(self, node):
@@ -649,6 +682,11 @@ def source_to_op(src, args, symbols, closure_vars):
     res : list of output tensors
         The result of output tensors of the formed OpNode.
     """
+    # add local hybrid script definition to symbols
+    for k, v in closure_vars.items():
+        if isinstance(v, types.FunctionType):
+            symbols[k] = v
+
     parser = parse_python(src, args, symbols, closure_vars)
 
     input_tensors = []

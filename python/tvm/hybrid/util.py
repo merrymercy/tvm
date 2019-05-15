@@ -75,7 +75,7 @@ def replace_io(body, rmap):
     def replace(op):
         if isinstance(op, _stmt.Provide) and op.func in rmap.keys():
             buf = rmap[op.func]
-            return _make.Provide(buf.op, op.value_index, op.value, op.args)
+            return _make.Provide(buf.op, buf.value_index, op.value, op.args)
         if isinstance(op, _expr.Call) and  op.func in rmap.keys():
             buf = rmap[op.func]
             return _make.Call(buf.dtype, buf.name, op.args, \

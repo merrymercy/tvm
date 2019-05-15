@@ -787,6 +787,61 @@ def test_capture():
     func, ins, outs = run_and_check(add_something, [a])
     run_and_check(func, ins, outs=outs)
 
+def test_let_bind_tmp():
+
+    @tvm.hybrid.script
+    def add_something(a):
+        c = output_tensor((8,), 'int32')
+        for i in range(8//2):
+            x = i * 2
+            y = i * 2
+            y = y + 3
+            c[x] = a[x] + y
+        return c
+
+    a = tvm.placeholder((8, ), dtype='int32', name='a')
+    c = add_something(a)
+
+    x = c.op.body.body.body.body
+    assert isinstance(x, tvm.stmt.LetStmt)
+    assert x.var.name == 'x'
+
+    func, ins, outs = run_and_check(add_something, [a])
+    run_and_check(func, ins, outs=outs)
+
+def test_multiple_output():
+    @script
+    def mul_output_func(input_data1,input_data2):
+        output1 = output_tensor(input_data1.shape, input_data1.dtype)
+        output2 = output_tensor(input_data1.shape, input_data1.dtype)
+
+        n, m = input_data1.shape
+
+        for i in range(n):
+            for j in range(m):
+                output1[i, j] = input_data1[i, j] + input_data2[i, j]
+                output2[i, j] = input_data1[i, j] - input_data2[i, j]
+        return output1, output2
+
+    @script
+    def func(input_data1, input_data2):
+        result1, result2 = mul_output_func(input_data1,input_data2)
+        output = output_tensor(input_data1.shape, input_data1.dtype)
+
+        n, m = input_data1.shape
+
+        for i in range(n):
+            for j in range(m):
+                output[i, j] = result1[i, j] * result2[i, j]
+
+        return output
+
+    input_data1 = tvm.placeholder((8, 8), name="input_data1")
+    input_data2 = tvm.placeholder((8, 8), name="input_data2")
+
+    func, ins, outs = run_and_check(func, [input_data1, input_data2])
+    run_and_check(func, ins, outs=outs)
+
 if __name__ == "__main__":
     test_outer_product()
     test_fanout()
@@ -805,5 +860,7 @@ if __name__ == "__main__":
     test_const_range()
     test_schedule()
     test_capture()
+    test_let_bind_tmp()
+    test_multiple_output()
     # TODO:
     # test_inplace()

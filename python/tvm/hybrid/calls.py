@@ -95,7 +95,8 @@ def _allocate_tensor(func_id, args):
     if n > 1:
         _internal_assert(isinstance(args[1], str),
                          "The data type should be an str")
-        _internal_assert(args[1].startswith('int') or args[1].startswith('float'), \
+        _internal_assert(args[1].startswith('int') or args[1].startswith('float') or
+                         args[1].startswith('uint'), \
                          "The data type should be either int or float!")
         dtype = args[1]
     else:
