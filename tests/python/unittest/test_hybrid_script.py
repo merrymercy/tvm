@@ -775,7 +775,7 @@ def test_capture():
     constant_list = [[1, 2], [3, n]]
     const_value = 1
 
-    @tvm.hybrid.script
+    @tvm.hybrid.script(capture=locals())
     def add_something(a):
         c = output_tensor((constant_tuple[1],), 'int32')
         for i in range(constant_tuple[1]):

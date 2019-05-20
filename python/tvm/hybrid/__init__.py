@@ -42,7 +42,7 @@ from .parser import source_to_op
 from .util import _pruned_source
 
 
-def script(pyfunc):
+def script(pyfunc=None, capture={}):
     """Decorate a python function function as hybrid script.
 
     The hybrid function support emulation mode and parsing to
@@ -50,15 +50,30 @@ def script(pyfunc):
 
     Returns
     -------
-    hybrid_func : function
+    pyfunc : function
         A decorated hybrid script function.
+    capture: dict
+        Custom captured variables.
+        Note: This is used to support python2 which does not
+        have inspect.getclosurevars function
     """
+
+    assert (pyfunc and not capture) or (not pyfunc and capture)
+
+    closure_vars = dict(capture)
+
+    if pyfunc:
+        try:
+            closure_vars.update(inspect.getclosurevars(pyfunc).nonlocals)
+            closure_vars.update(inspect.getclosurevars(pyfunc).globals)
+        except AttributeError:   # ignore error for python2
+            pass
+
     def wrapped_func(func, *args, **kwargs): #pylint: disable=missing-docstring
         from .util import _is_tvm_arg_types
+
         if _is_tvm_arg_types(args):
             src = _pruned_source(func)
-            closure_vars = inspect.getclosurevars(func).nonlocals
-            closure_vars.update(inspect.getclosurevars(func).globals)
             return source_to_op(src, args, func.__globals__, closure_vars)
 
         from .runtime import _enter_hybrid_runtime, _restore_runtime
@@ -67,7 +82,13 @@ def script(pyfunc):
         _restore_runtime(func, intersect)
         return value
 
-    return decorate(pyfunc, wrapped_func)
+    if pyfunc:
+        return decorate(pyfunc, wrapped_func)
+    else:
+        def decerator_func(func):
+            return decorate(func, wrapped_func)
+
+        return decerator_func
 
 
 def build(sch, inputs, outputs, name="hybrid_func"):

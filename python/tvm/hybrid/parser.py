@@ -383,7 +383,7 @@ class HybridParser(ast.NodeVisitor):
             # do not support nested tuple
             _internal_assert(isinstance(rhs, (tuple, list, Array)) and len(lhs.elts) == len(rhs),
                              "The numbers of elements mismatch between lhs and rhs in tuple assignment")
-            assign_list = [self.visit_one_assign(lhs.elts[i], rhs[i]) for i in range(len(lhs.elts))]
+            assign_list = [self.generate_one_assign(lhs.elts[i], rhs[i]) for i in range(len(lhs.elts))]
             return concat_list_to_block(assign_list)
         else:
             return self.generate_one_assign(lhs, rhs)
