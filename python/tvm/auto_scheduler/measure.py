@@ -557,7 +557,8 @@ def local_build_worker(index):
                 print(".E", end="")  # Build error
         return filename, args, error_no, error_msg, time.time() - tic
 
-    res = call_func_with_timeout(timeout, timed_func)
+    #res = call_func_with_timeout(timeout, timed_func)
+    res = timed_func()
     if isinstance(res, TimeoutError):
         if verbose >= 1:
             print(".T", end="")  # Build timeout

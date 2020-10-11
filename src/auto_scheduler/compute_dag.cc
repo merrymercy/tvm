@@ -787,6 +787,9 @@ std::string GetNewLayout(Array<PrimExpr>* new_shape, const State& state, const i
       iters.push_back(iter);
     } else {
       for (const Iterator& ori_iter : iter->orig_iters) {
+        // The range can be nullptr.
+        // This is caused by compute_root
+        std::cerr << "range: " << ori_iter->range << std::endl;
         iters.push_back(ori_iter);
       }
     }
