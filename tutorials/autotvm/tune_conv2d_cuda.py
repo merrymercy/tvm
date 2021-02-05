@@ -58,6 +58,8 @@ from tvm.topi.testing import conv2d_nchw_python
 import tvm.testing
 
 from tvm import autotvm
+from tvm.autotvm.task.space import SplitEntity
+from tvm.autotvm.task.dispatcher import ApplyConfig
 
 ######################################################################
 # Step 1:  Define the search space
@@ -98,14 +100,14 @@ def conv2d_no_batching(N, H, W, CO, CI, KH, KW, stride, padding):
     rc, ry, rx = s[conv].op.reduce_axis
 
     cfg = autotvm.get_config()
-    cfg.define_split("tile_f", f, num_outputs=4)
-    cfg.define_split("tile_y", y, num_outputs=4)
-    cfg.define_split("tile_x", x, num_outputs=4)
-    cfg.define_split("tile_rc", rc, num_outputs=3)
-    cfg.define_split("tile_ry", ry, num_outputs=3)
-    cfg.define_split("tile_rx", rx, num_outputs=3)
-    cfg.define_knob("auto_unroll_max_step", [0, 512, 1500])
-    cfg.define_knob("unroll_explicit", [0, 1])
+    cfg.define_split("tile_f", f, num_outputs=4)          # filter / output channel
+    cfg.define_split("tile_y", y, num_outputs=4)          # height
+    cfg.define_split("tile_x", x, num_outputs=4)          # width
+    cfg.define_split("tile_rc", rc, num_outputs=3)        # input channel
+    cfg.define_split("tile_ry", ry, num_outputs=3)        # kernel width
+    cfg.define_split("tile_rx", rx, num_outputs=3)        # kernel height
+    cfg.define_knob("auto_unroll_max_step", [0])          # disable auto unroll
+    cfg.define_knob("unroll_explicit", [0])               # disable auto unroll
     ##### space definition end #####
 
     # inline padding
@@ -204,7 +206,7 @@ measure_option = autotvm.measure_option(
 # see many error reports. As long as you can see non-zero GFLOPS, it is okay.
 tuner = autotvm.tuner.XGBTuner(task)
 tuner.tune(
-    n_trial=20,
+    n_trial=100,
     measure_option=measure_option,
     callbacks=[autotvm.callback.log_to_file("conv2d.log")],
 )
@@ -216,11 +218,16 @@ tuner.tune(
 # inspect the best config
 dispatch_context = autotvm.apply_history_best("conv2d.log")
 best_config = dispatch_context.query(task.target, task.workload)
+
+# Plug your own tile sizes
+#best_config._entity_map['tile_f'] = SplitEntity([-1, 2, 8, 8])
+
 print("\nBest config:")
 print(best_config)
 
 # apply history best from log file
-with autotvm.apply_history_best("conv2d.log"):
+#with autotvm.apply_history_best("conv2d.log"):
+with ApplyConfig(best_config):
     with tvm.target.Target("cuda"):
         s, arg_bufs = conv2d_no_batching(N, H, W, CO, CI, KH, KW, strides, padding)
         func = tvm.build(s, arg_bufs)
